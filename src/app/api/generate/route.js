@@ -140,13 +140,13 @@ async function handleWrite(body, businessSlug) {
     .from('blog_generated_posts').select('*').eq('id', postId).single();
   if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 });
 
-  const { brandKit, existingPosts } = await loadBusinessContext(businessSlug);
+  const { brandKit, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
   const promptData = JSON.parse(post.generation_prompt);
   const { research, notes, targetKeyword, postType } = promptData;
 
   // Write content
   const startTime = Date.now();
-  const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes);
+  const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes, referencePosts);
   const duration = Date.now() - startTime;
 
   // Save raw content to post (will be replaced with HTML in step 3)
