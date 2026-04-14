@@ -74,27 +74,48 @@ export default function Dashboard() {
     document.getElementById('generate-section')?.scrollIntoView({ behavior: 'smooth' });
   }
 
+  const [genStep, setGenStep] = useState('');
+
+  async function callStep(action, body) {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, businessSlug: 'callbird', ...body }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.reason || 'Step failed');
+    return data;
+  }
+
   async function handleGenerate(e) {
     e.preventDefault();
     if (!keyword.trim()) return;
     setGenerating(true);
     setError(null);
     setGenResult(null);
+    setGenStep('');
 
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          businessSlug: 'callbird',
-          targetKeyword: keyword.trim(),
-          postType,
-          notes: notes.trim(),
-        }),
+      // Step 1: Research
+      setGenStep('🔍 Researching topic & analyzing competition...');
+      const step1 = await callStep('research', {
+        targetKeyword: keyword.trim(), postType, notes: notes.trim(),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setGenResult(data);
+      const postId = step1.postId;
+
+      // Step 2: Write content
+      setGenStep('✍️ Writing content with research insights...');
+      await callStep('write', { postId });
+
+      // Step 3: HTML template
+      setGenStep('🏗️ Building HTML & checking for duplicates...');
+      const step3 = await callStep('template', { postId });
+
+      // Step 4: Quality control
+      setGenStep('✅ Running quality control (28 checks)...');
+      const step4 = await callStep('qc', { postId });
+
+      setGenResult(step4);
       setKeyword('');
       setNotes('');
       fetchPosts();
@@ -102,6 +123,7 @@ export default function Dashboard() {
       setError(e.message);
     } finally {
       setGenerating(false);
+      setGenStep('');
     }
   }
 
@@ -259,7 +281,7 @@ export default function Dashboard() {
               />
             </div>
             <button type="submit" style={styles.generateBtn} disabled={generating || !keyword.trim()}>
-              {generating ? '⏳ Generating & Running QC...' : '⚡ Generate Blog Post'}
+              {generating ? (genStep || '⏳ Starting...') : '⚡ Generate Blog Post'}
             </button>
           </form>
 

@@ -10,12 +10,6 @@ import {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const RATE_LIMIT_DELAY_MS = 0; // Tier 2+ has sufficient ITPM for sequential calls
-
-// ─────────────────────────────────────────────────────────
-//  CONTENT FRAMEWORKS LIBRARY
-// ─────────────────────────────────────────────────────────
-
 const CONTENT_FRAMEWORKS = `
 Choose the ONE framework that best fits the topic and research. Variety is critical.
 
@@ -30,21 +24,10 @@ H — "The Expert Roundup": 5-8 key questions, each answer AEO-optimized.
 `;
 
 // ─────────────────────────────────────────────────────────
-//  UTILITY
+//  STEP 1: RESEARCH (~15s)
 // ─────────────────────────────────────────────────────────
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// ─────────────────────────────────────────────────────────
-//  PHASE 1: RESEARCH (web search)
-//  ~3K input tokens
-// ─────────────────────────────────────────────────────────
-
-async function researchTopic(targetKeyword, postType) {
-  const startTime = Date.now();
-
+export async function runResearch(targetKeyword, postType) {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 4000,
@@ -83,11 +66,10 @@ Return ONLY valid JSON. No markdown fences.`
   const textBlocks = response.content.filter(b => b.type === 'text');
   const text = textBlocks.map(b => b.text).join('\n').trim();
 
-  let research;
   try {
-    research = JSON.parse(text.replace(/```json\n?|```/g, '').trim());
+    return JSON.parse(text.replace(/```json\n?|```/g, '').trim());
   } catch {
-    research = {
+    return {
       top_results_summary: 'Parsing failed — using training knowledge.',
       content_gaps: [], unique_angle: `Fresh perspective on ${targetKeyword}`,
       hook: null, fresh_data_points: [], questions_people_ask: [],
@@ -95,16 +77,13 @@ Return ONLY valid JSON. No markdown fences.`
       framework_reasoning: 'Default', suggested_sections: [], competitor_claims_to_verify: [],
     };
   }
-
-  return { research, duration: Date.now() - startTime };
 }
 
 // ─────────────────────────────────────────────────────────
-//  PHASE 2: WRITE CONTENT (no HTML template — just content)
-//  ~8K input tokens
+//  STEP 2: WRITE CONTENT (~20s)
 // ─────────────────────────────────────────────────────────
 
-async function writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes) {
+export async function writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes) {
   const existingList = existingPosts
     .map(p => `- "${p.title}" → ${p.slug}.html`)
     .join('\n');
@@ -213,11 +192,10 @@ Include internal links as <a href="slug.html">anchor text</a>.
 }
 
 // ─────────────────────────────────────────────────────────
-//  PHASE 3: WRAP IN HTML TEMPLATE
-//  ~6K input tokens (template + content from phase 2)
+//  STEP 3: WRAP IN HTML TEMPLATE (~15s)
 // ─────────────────────────────────────────────────────────
 
-async function wrapInTemplate(contentOutput, domain, phone, gtmId, blogPrefix) {
+export async function wrapInTemplate(contentOutput, domain, phone, gtmId, blogPrefix) {
   const metaMatch = contentOutput.match(/<metadata>([\s\S]*?)<\/metadata>/);
   const contentMatch = contentOutput.match(/<content>([\s\S]*?)<\/content>/);
 
@@ -278,105 +256,9 @@ Return ONLY the complete HTML. No explanation, no markdown fences. Start with <!
   });
 
   let html = response.content[0].text.trim();
-  // Strip markdown fences if present
   html = html.replace(/^```html\n?/, '').replace(/\n?```$/, '');
 
   return { metadata, html };
-}
-
-
-// ─────────────────────────────────────────────────────────
-//  MAIN: generateBlogPost
-//  Research → delay → Write → delay → Template → Save
-// ─────────────────────────────────────────────────────────
-
-export async function generateBlogPost(businessSlug, targetKeyword, postType, notes = '') {
-  const totalStart = Date.now();
-  const { business, brandKit, existingPosts } = await loadBusinessContext(businessSlug);
-
-  // Slug conflict check
-  const proposedSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-  const conflict = existingPosts.find(p => p.slug === proposedSlug);
-  if (conflict) throw new Error(`Slug "${proposedSlug}" already exists: "${conflict.title}".`);
-
-  // PHASE 1: Research
-  console.log('[blog-farm] Phase 1: Research...');
-  const { research, duration: researchDuration } = await researchTopic(targetKeyword, postType);
-  console.log(`[blog-farm] Research done (${researchDuration}ms). Waiting for rate limit...`);
-
-  await delay(RATE_LIMIT_DELAY_MS);
-
-  // PHASE 2: Write content
-  console.log('[blog-farm] Phase 2: Writing content...');
-  const writeStart = Date.now();
-  const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes);
-  const writeDuration = Date.now() - writeStart;
-  console.log(`[blog-farm] Content written (${writeDuration}ms). Waiting for rate limit...`);
-
-  await delay(RATE_LIMIT_DELAY_MS);
-
-  // PHASE 3: Wrap in HTML template
-  console.log('[blog-farm] Phase 3: HTML template wrapping...');
-  const templateStart = Date.now();
-  const { metadata, html: htmlContent } = await wrapInTemplate(
-    contentOutput, business.domain, business.phone, business.gtm_id, business.blog_file_prefix
-  );
-  const templateDuration = Date.now() - templateStart;
-  console.log(`[blog-farm] HTML done (${templateDuration}ms).`);
-
-  // Word count validation
-  const wordCount = htmlContent.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
-  if (wordCount < 500) throw new Error(`Too short: ${wordCount} words`);
-
-  const totalDuration = Date.now() - totalStart;
-
-  // Save to database
-  const { data: post, error } = await supabase
-    .from('blog_generated_posts')
-    .insert({
-      business_id: business.id,
-      title: metadata.title,
-      slug: metadata.slug,
-      meta_description: metadata.meta_description,
-      primary_keyword: metadata.primary_keyword || targetKeyword,
-      secondary_keywords: metadata.secondary_keywords || [],
-      category: metadata.category || postType,
-      read_time: metadata.read_time,
-      emoji: metadata.emoji,
-      excerpt: metadata.excerpt,
-      html_content: htmlContent,
-      status: 'pending',
-      generation_prompt: `Research: ${research.unique_angle}\nFramework: ${research.recommended_framework}\nKeyword: ${targetKeyword}`,
-      word_count: wordCount,
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`DB insert failed: ${error.message}`);
-
-  // Log all phases
-  await supabase.from('blog_generation_logs').insert([
-    {
-      post_id: post.id, step: 'research', status: 'success',
-      details: { target_keyword: targetKeyword, framework: research.recommended_framework,
-        unique_angle: research.unique_angle, gaps_found: (research.content_gaps || []).length },
-      duration_ms: researchDuration,
-    },
-    {
-      post_id: post.id, step: 'write_content', status: 'success',
-      details: { model: 'claude-sonnet-4-20250514', framework_used: metadata.framework_used,
-        information_gain: metadata.information_gain },
-      duration_ms: writeDuration,
-    },
-    {
-      post_id: post.id, step: 'html_template', status: 'success',
-      details: { word_count: wordCount },
-      duration_ms: templateDuration,
-    },
-  ]);
-
-  console.log(`[blog-farm] Complete! "${metadata.title}" (${wordCount} words, ${Math.round(totalDuration/1000)}s total)`);
-  return post;
 }
 
 
