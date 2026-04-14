@@ -31,7 +31,7 @@ export async function runResearch(targetKeyword, postType) {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2000,
-    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
     messages: [{
       role: 'user',
       content: `SEO content strategist: research "${targetKeyword}" for a blog post (${postType}) about AI receptionists for small businesses ($99-$499/mo, callbirdai.com).

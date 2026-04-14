@@ -4,7 +4,8 @@ import { runQualityControl } from '@/lib/quality-control.js';
 import { validateKeywordUniqueness, validatePostUniqueness } from '@/lib/dedup-validator.js';
 import supabase from '@/lib/supabase.js';
 
-export const maxDuration = 60;
+// Fluid Compute on Hobby allows up to 300s — AI API I/O doesn't count as CPU time
+export const maxDuration = 300;
 
 /**
  * 4-step generation pipeline. Each step is a separate API call < 60s.
