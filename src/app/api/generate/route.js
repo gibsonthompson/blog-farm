@@ -73,12 +73,35 @@ async function handleResearch(body, businessSlug) {
   const duration = Date.now() - startTime;
 
   // Create post record with research saved
+  let baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+  // Check for existing records with this slug
+  const { data: existingRecords } = await supabase.from('blog_generated_posts')
+    .select('id, title, status').eq('business_id', biz.id).eq('slug', baseSlug);
+
+  if (existingRecords?.length) {
+    // Clean up failed [Generating] records
+    const stale = existingRecords.filter(r => r.title.includes('[Generating]'));
+    if (stale.length) {
+      const staleIds = stale.map(r => r.id);
+      await supabase.from('blog_generation_logs').delete().in('post_id', staleIds);
+      await supabase.from('blog_generated_posts').delete().in('id', staleIds);
+    }
+    // Block if a real (non-stale) post exists with this slug
+    const real = existingRecords.filter(r => !r.title.includes('[Generating]'));
+    if (real.length) {
+      return NextResponse.json({
+        error: `A post with slug "${baseSlug}" already exists: "${real[0].title}" (${real[0].status}). Use a different keyword angle.`,
+      }, { status: 409 });
+    }
+  }
+
   const { data: post, error } = await supabase
     .from('blog_generated_posts')
     .insert({
       business_id: biz.id,
       title: `[Generating] ${targetKeyword}`,
-      slug: targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+      slug: baseSlug,
       primary_keyword: targetKeyword,
       category: postType,
       html_content: '<p>Generating...</p>',
