@@ -34,12 +34,15 @@ export async function GET(request) {
 
   while ((match = urlPattern.exec(xml)) !== null) {
     const url = match[1];
-    if (url.startsWith(blogPrefix) && url.endsWith('.html')) {
-      // Extract slug from URL: blog-{slug}.html → slug
-      const filename = url.split('/').pop(); // blog-some-slug.html
+    // Match blog post URLs — clean (no .html) or with .html
+    if (url.startsWith(blogPrefix)) {
+      const filename = url.split('/').pop();
       const slug = filename
         .replace(biz.blog_file_prefix, '')
         .replace('.html', '');
+
+      // Skip if slug is empty (e.g., the blog index page itself)
+      if (!slug || slug === 'blog') continue;
 
       // Extract lastmod if available
       const locIndex = xml.indexOf(url);
@@ -63,16 +66,14 @@ export async function GET(request) {
   for (const blog of blogUrls) {
     const { error } = await supabase
       .from('blog_existing_posts')
-      .insert({
+      .upsert({
         business_id: biz.id,
         url: blog.url,
         title: blog.title,
         slug: blog.slug,
         publish_date: blog.publishDate,
         category: inferCategory(blog.slug),
-      })
-      .onConflict('business_id,slug')
-      .ignore();
+      }, { onConflict: 'business_id,slug', ignoreDuplicates: true });
 
     if (error) {
       skipped++;
