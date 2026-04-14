@@ -154,8 +154,10 @@ function normalize(str) {
 }
 
 /**
- * Calculate word overlap ratio between two normalized strings.
+ * Calculate word overlap using Jaccard similarity (intersection / union).
  * Returns 0-1 where 1 means identical word sets.
+ * Jaccard handles different-length comparisons fairly — 
+ * "AI receptionist" vs "AI receptionist medical offices" = 0.5, not 1.0.
  */
 function wordOverlap(a, b) {
   if (!a || !b) return 0;
@@ -168,9 +170,8 @@ function wordOverlap(a, b) {
     if (wordsB.has(w)) intersection++;
   }
 
-  // Jaccard-like but weighted toward the smaller set
-  const smaller = Math.min(wordsA.size, wordsB.size);
-  return intersection / smaller;
+  const union = wordsA.size + wordsB.size - intersection;
+  return intersection / union;
 }
 
 /**
