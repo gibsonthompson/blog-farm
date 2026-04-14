@@ -178,7 +178,7 @@ export function validatePost(html, metadata, existingSlugs = []) {
   for (const link of internalLinks) {
     const slug = link.replace('blog-', '').replace('.html', '');
     if (existingSlugs.length > 0 && !existingSlugs.includes(slug)) {
-      warnings.push(`Internal link to unknown slug: ${link} — verify this post exists`);
+      errors.push(`Broken internal link: ${link} — this slug does not exist in the database`);
     }
   }
 

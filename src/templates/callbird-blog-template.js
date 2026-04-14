@@ -168,21 +168,18 @@ export const CALLBIRD_FAQ_SCRIPT = `    <script>
     </script>`;
 
 /**
- * Available CSS component classes the AI can use in article content:
+ * Available CSS component classes for article content:
  * 
- * .quick-answer          — Blue-left-border box at top with "Quick Answer" label
- * .aeo-answer            — Light gray box for AEO-optimized summary answers under H2s
- * .table-wrap > table    — Responsive comparison tables (use .hl for CallBird column highlight)
- * .stats-row > .stat-box — Grid of stat cards with .stat-number and .stat-label
- * .cta-box               — Blue gradient CTA box with .btn-accent button
- * .callout               — Yellow-left-border callout/tip box
- * .faq-section           — FAQ accordion (use .faq-item > .faq-question + .faq-answer)
- * .related-posts         — Related articles grid with .related-card links
- * .provider-card         — Provider/competitor card with .pros-cons grid
+ * .stat-highlight         — Highlighted stat number (use sparingly, max 3)
+ * .table-wrap > table     — Responsive comparison tables (.hl for CallBird column)
+ * .cta-box                — Blue gradient CTA box with .btn-accent button
+ * .callout                — Yellow-left-border callout/tip box
+ * .faq-section            — FAQ accordion (.faq-item > .faq-question + .faq-answer)
+ * .related-posts          — Related articles grid with .related-card links
  */
 
 export const TEMPLATE_INSTRUCTIONS = `
-You MUST use this exact HTML structure for the blog post. Do NOT deviate from it.
+You MUST use this exact HTML structure for the blog post.
 
 STRUCTURE (in order):
 1. <!DOCTYPE html> + <html lang="en">
@@ -194,8 +191,7 @@ STRUCTURE (in order):
    - Meta keywords
    - Canonical URL: https://callbirdai.com/blog-{slug}.html
    - OG tags (title, description, type=article, url)
-   - Article JSON-LD schema
-   - FAQPage JSON-LD schema (3-5 questions minimum)
+   - Single JSON-LD @graph with Article + FAQPage + Organization schemas
    - Google Fonts preconnect + Sora + Inter import
    - <style> block with the EXACT CSS provided (copy it verbatim)
 3. <body> with:
@@ -206,22 +202,39 @@ STRUCTURE (in order):
    - Footer (copy exactly from template)
    - FAQ toggle script
 
+HERO META MUST SAY:
+<div class="hero-meta">
+  <span>📅 [formatted date]</span><span>•</span>
+  <span>⏱️ [X] min read</span><span>•</span>
+  <span>By Gibson Thompson</span>
+</div>
+
 INSIDE THE ARTICLE, use these components:
-- Start with .quick-answer box (every post)
-- Use .aeo-answer boxes under major H2s (for AEO optimization)
+- Use .stat-highlight for important numbers (sparingly — max 3)
 - Use .table-wrap for comparison tables (highlight CallBird column with .hl class)
-- Use .stats-row for statistics displays
-- Use .cta-box for mid-article and end-article CTAs
+- Use .cta-box for mid-article and end-article CTAs (max 2)
 - Use .callout for tips and key insights
-- End with .faq-section (accordion FAQ, 3-5 items)
+- End with .faq-section (accordion FAQ, 4-6 items)
 - End with .related-posts grid (3-4 related articles)
 
 CRITICAL RULES:
+- Author is ALWAYS "Gibson Thompson" — NEVER "CallBird Team"
 - The nav HTML, footer HTML, CSS, and FAQ script must be EXACT copies — do not modify them
-- Every post must have the blue gradient hero, not a plain header
-- The hero-category span should have an emoji + category name
-- The hero-meta should show date, read time, and "By CallBird Team"
-- All internal links use relative paths (e.g., "blog-callbird-vs-smith-ai.html")
-- Phone number in CTAs: (505) 594-5806
-- CTA buttons link to /start
+- Phone number: (505) 594-5806
+- CTA links go to /start or start.html
+- Use blog- prefix for internal post links (e.g., blog-callbird-vs-rosie.html)
+- Schema datePublished and dateModified use today's date
+- Schema author: {"@type": "Person", "name": "Gibson Thompson"}
+
+EXACT FAQ HTML STRUCTURE (the toggle script requires this exact structure):
+<div class="faq-section">
+  <h2>Frequently Asked Questions</h2>
+  <div class="faq-item">
+    <button class="faq-question">Question text here?<span class="faq-icon">+</span></button>
+    <div class="faq-answer"><div class="faq-answer-inner"><p>Answer text here.</p></div></div>
+  </div>
+  <!-- repeat .faq-item for each question -->
+</div>
+
+DO NOT use <details>/<summary>, <h3>/<p> pairs, or any other FAQ structure. The toggle ONLY works with .faq-question buttons inside .faq-item divs.
 `;

@@ -13,7 +13,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const CONTENT_FRAMEWORKS = `
 Choose the ONE framework that best fits the topic and research. Variety is critical.
 
-A — "The Hidden Cost": Hook with a dollar figure. Walk through the math. Show ROI.
+A — "The Hidden Cost": The cost of NOT solving the problem. Hook with what missed calls/manual processes cost. Walk through the math. Show ROI of the solution.
 B — "The Definitive Comparison": Quick verdict first. Fair feature breakdown. "Choose X if..." endings.
 C — "The Industry Insider": Open with vivid industry scenario. Use industry terminology throughout.
 D — "The Data Story": Lead with surprising statistic. Build narrative around data.
@@ -38,21 +38,23 @@ export async function runResearch(targetKeyword, postType) {
 
 Search for "${targetKeyword}" and analyze what's ranking. Then search for related statistics or data.
 
+CRITICAL BUSINESS CONTEXT: CallBird AI is our product. The blog exists to drive free trial signups. Every content angle must position AI receptionists positively and CallBird as the best solution. Never suggest angles that create fear about AI receptionists, recommend competitors, or make the category seem expensive/risky/complicated. The unique angle should make readers WANT an AI receptionist, specifically CallBird.
+
 Return JSON:
 {
   "top_results_summary": "Top results and their weaknesses",
-  "content_gaps": ["What top results miss"],
-  "unique_angle": "Our angle for information gain",
-  "hook": "Opening hook — stat or scenario",
-  "fresh_data_points": ["Stats found"],
+  "content_gaps": ["What top results miss — focus on gaps where CallBird can shine"],
+  "unique_angle": "Angle that positions CallBird favorably while adding information gain",
+  "hook": "Opening hook — stat or scenario that creates urgency to solve the problem",
+  "fresh_data_points": ["Stats found — prefer stats showing cost of missed calls, value of AI"],
   "questions_people_ask": ["Questions from search results"],
   "recommended_framework": "A/B/C/D/E/F/G/H",
   "framework_reasoning": "Why",
-  "suggested_sections": ["Unique section ideas"],
-  "competitor_claims_to_verify": ["Claims to address"]
+  "suggested_sections": ["Section ideas that showcase AI receptionist value"],
+  "competitor_claims_to_verify": ["Claims to address — focus on where CallBird is better"]
 }
 
-Frameworks: A=Hidden Cost, B=Comparison, C=Industry Insider, D=Data Story, E=Step-by-Step, F=Myth Buster, G=Decision Framework, H=Expert Roundup.
+Frameworks: A=Hidden Cost (of NOT having AI), B=Comparison, C=Industry Insider, D=Data Story, E=Step-by-Step, F=Myth Buster, G=Decision Framework, H=Expert Roundup.
 
 ONLY valid JSON. No fences.`
     }],
@@ -80,7 +82,7 @@ ONLY valid JSON. No fences.`
 
 export async function writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes, referencePosts = []) {
   const existingList = existingPosts
-    .map(p => `- "${p.title}" → ${p.slug}.html`)
+    .map(p => `- "${p.title}" → blog-${p.slug}.html`)
     .join('\n');
 
   const linkTargets = JSON.stringify(brandKit.internal_link_targets || [], null, 2);
@@ -152,14 +154,29 @@ IMPORTANT: The framework is a GUIDE, not a straitjacket. If a section doesn't ea
 - Every internal link must use real slugs from the existing posts list below
 - Min 3 internal links, spread naturally across the post
 - 4-6 FAQ items with standalone answers (each answer works if quoted alone by an AI engine)
+
+BUSINESS-CRITICAL — VIOLATION MEANS INSTANT REJECTION:
+- NEVER recommend a competitor over CallBird. Acknowledge competitor strengths in comparisons, but never say "use [competitor] instead" or "only [competitor] offers [feature]." If CallBird has a gap, frame it as a workaround or future feature.
+- NEVER create fear about the AI receptionist category. Posts about costs, risks, or complexity must frame these as problems CallBird SOLVES — not reasons to avoid AI receptionists.
+- EVERY post must end with the reader wanting to try CallBird. If someone finishes reading and thinks "this seems too expensive/risky/complicated," the post has FAILED.
+- CallBird is the GUIDE, customer is the HERO (StoryBrand). Customer has a problem. CallBird helps them solve it. Never position CallBird as the hero.
+- CallBird setup takes MINUTES, not months. ROI is immediate from day one. Break-even in DAYS, not months. Never suggest long implementation timelines.
+- CallBird IS SOC 2 Type II certified and A2P 10DLC compliant. Always position as a compliant, trustworthy option.
+- Cost narrative is SAVINGS: $99-$499/month vs $33,000-$60,000/year for human receptionists. Never frame CallBird as expensive.
+- Never suggest users skip CallBird features or use manual workarounds when CallBird handles it natively.
 </hard_rules>
 
 <link_targets>
-Service pages:
+Service pages (use exact URLs):
 ${JSON.stringify(brandKit.internal_link_targets || [], null, 2)}
 
-Existing blog posts (link to related ones):
+Existing blog posts — ONLY link to these. DO NOT invent slugs that aren't on this list:
 ${existingList || '(none)'}
+
+INTERNAL LINK FORMAT: <a href="blog-{slug}.html">descriptive anchor text</a>
+Example: <a href="blog-callbird-vs-rosie.html">our CallBird vs Rosie comparison</a>
+
+⚠️ If a slug is not in the list above, DO NOT link to it. Broken internal links hurt SEO.
 </link_targets>
 
 <anti_patterns>
