@@ -10,7 +10,7 @@ import {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const RATE_LIMIT_DELAY_MS = 65000; // 65 seconds between API calls
+const RATE_LIMIT_DELAY_MS = 10000; // 10 seconds between API calls
 
 // ─────────────────────────────────────────────────────────
 //  CONTENT FRAMEWORKS LIBRARY
