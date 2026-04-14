@@ -204,16 +204,33 @@ USE FRAMEWORK: ${research.recommended_framework || 'Best fit'}
 Reason: ${research.framework_reasoning || 'Select based on topic'}
 
 === QUALITY BARS ===
-1. INFORMATION GAIN: Every section must have insight the top results DON'T.
-2. SPECIFICITY: Exact numbers, specific scenarios, named workflows. Never vague.
-3. AEO: Structure key answers for AI engine citation. Use .aeo-answer boxes.
-4. INTERNAL LINKS: Minimum 3 natural contextual links.
-5. FAQ SCHEMA: 4-6 items answering REAL questions from research.
-6. STRUCTURE: Follow the selected framework. No cookie-cutter layouts.
-7. DEPTH: Minimum 2,000 words of substantive content.
-8. NO SLOP: No "in today's fast-paced world." No "cutting-edge solutions." Write like a human expert.
-9. UNIQUE INTRO: First 200 words must hook with the specific angle from research. No generic intros.
-10. HONEST COMPETITOR TREATMENT: If comparing, acknowledge real competitor strengths.
+1. ANSWER-FIRST STRUCTURE: Every H2 section MUST open with a direct answer in 40-60 words
+   inside a .aeo-answer box. This is the snippet AI engines extract and cite. No preamble before it.
+2. STATISTICS CADENCE: Include a verifiable data point every 150-200 words. Use the fresh data
+   from research. When citing stats, include context ("according to [source type]" or "[year] data shows").
+   Never fabricate specific study names or URLs.
+3. INFORMATION GAIN: Every section must contain insight the top results DON'T have. If a section
+   just restates what any competitor says, rewrite it with a unique angle, deeper analysis, or counter-argument.
+4. SPECIFICITY: Exact dollar amounts, specific scenarios with names/details, named workflows. Never vague.
+5. ENTITY CLARITY: First 200 words must establish CallBird as an entity — what it is, who it serves,
+   what it costs, where it's based. AI engines need this to build entity associations.
+6. INTERNAL LINKS: Minimum 3 natural contextual links to related posts and pages.
+7. FAQ SCHEMA: 4-6 items answering REAL questions from research. Each answer must be
+   self-contained (citable without surrounding context) and 2-4 sentences.
+8. SCHEMA STACKING: Use a single <script type="application/ld+json"> with @graph containing
+   Article + FAQPage + Organization schemas together, not separate blocks.
+9. AUTHOR ATTRIBUTION: Include author "Gibson Thompson, AI Business Solutions Expert" with
+   datePublished and dateModified in Article schema. Show in hero-meta section.
+10. STRUCTURE: Follow the selected framework. No cookie-cutter layouts.
+11. DEPTH: Minimum 2,000 words of substantive content. Quality over padding.
+12. NO SLOP: No "in today's fast-paced world." No "cutting-edge solutions." No "leveraging AI."
+    No "comprehensive guide to..." openers. Write like a human expert, not a content mill.
+13. UNIQUE INTRO: First 200 words must hook with the specific angle from research. Lead with
+    a surprising stat, a vivid scenario, or a counterintuitive claim — not a generic definition.
+14. HONEST COMPETITOR TREATMENT: Acknowledge real competitor strengths. One-sided content
+    loses trust with readers AND AI engines.
+15. FRESHNESS SIGNALS: Include current year in title (e.g., "[2026]"), use dateModified in schema,
+    reference recent data. AI engines favor recently updated content.
 
 ${TEMPLATE_INSTRUCTIONS}
 

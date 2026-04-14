@@ -52,8 +52,10 @@ Review the HTML and return a JSON object with this exact structure:
 {
   "scores": {
     "seo": <1-10>,
+    "aeo_readiness": <1-10>,
     "brand_voice": <1-10>,
     "factual_accuracy": <1-10>,
+    "information_gain": <1-10>,
     "technical": <1-10>,
     "content_quality": <1-10>,
     "overall": <1-10>
@@ -61,16 +63,20 @@ Review the HTML and return a JSON object with this exact structure:
   "checks": {
     "has_title_tag": <true/false>,
     "title_under_60_chars": <true/false>,
+    "title_includes_year": <true/false>,
     "has_meta_description": <true/false>,
     "meta_under_160_chars": <true/false>,
     "has_canonical_url": <true/false>,
     "has_og_tags": <true/false>,
     "has_gtm": <true/false>,
     "has_faq_schema": <true/false>,
+    "schema_uses_graph": <true/false — check for @graph combining Article+FAQPage>,
+    "has_date_modified": <true/false — dateModified in Article schema>,
+    "has_author_attribution": <true/false — author name in schema and visible on page>,
     "has_h1": <true/false>,
     "single_h1": <true/false>,
     "has_internal_links": <true/false>,
-    "min_2_internal_links": <true/false>,
+    "min_3_internal_links": <true/false>,
     "correct_phone_number": <true/false>,
     "correct_pricing": <true/false>,
     "has_cta": <true/false>,
@@ -78,17 +84,27 @@ Review the HTML and return a JSON object with this exact structure:
     "mobile_responsive_css": <true/false>,
     "no_fabricated_testimonials": <true/false>,
     "no_fabricated_revenue_figures": <true/false>,
-    "no_generic_ai_intro": <true/false>
+    "no_generic_ai_intro": <true/false — first 200 words must NOT be generic>,
+    "answer_first_structure": <true/false — do H2 sections lead with a direct 40-60 word answer?>,
+    "has_statistics_throughout": <true/false — verifiable data points every 150-200 words?>,
+    "entity_clarity_in_intro": <true/false — first 200 words define what/who/cost/where?>
   },
   "issues": ["list of specific issues found"],
   "suggestions": ["list of improvement suggestions"],
+  "information_gain_assessment": "1-2 sentences on what unique value this post adds vs typical competitor content",
+  "aeo_assessment": "1-2 sentences on how well-structured this is for AI engine citation",
   "verdict": "PASS" | "NEEDS_REVISION" | "REJECT"
 }
 
 Verdict rules:
-- PASS: overall >= 8 AND all critical checks pass (gtm, phone, pricing, no fabrications)
-- NEEDS_REVISION: overall 5-7 OR minor issues that can be auto-fixed
-- REJECT: overall < 5 OR critical brand violations
+- PASS: overall >= 8 AND all critical checks pass (gtm, phone, pricing, no fabrications, answer_first_structure, has_statistics_throughout)
+- NEEDS_REVISION: overall 5-7 OR AEO/information gain scores below 7
+- REJECT: overall < 5 OR critical brand violations OR information_gain score below 4
+
+IMPORTANT SCORING GUIDANCE:
+- information_gain: Score 8+ ONLY if the post contains insights, data, or analysis you would NOT find in the first page of Google results for this keyword. Score 5 or below if it reads like a rewrite of existing content.
+- aeo_readiness: Score 8+ ONLY if each major section has a clear, extractable answer that an AI engine could cite standalone. Score 5 or below if answers are buried in paragraphs or require surrounding context.
+- content_quality: Score 8+ ONLY if a human expert in this industry would find this genuinely useful. Score 5 or below if it reads like generic AI content with industry terms swapped in.
 
 Return ONLY the JSON — no markdown fences, no explanation.`
     }],
