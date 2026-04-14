@@ -17,15 +17,21 @@ export const maxDuration = 300;
  * Step 4 (qc):        run quality control → save scores
  */
 export async function POST(request) {
+  let body;
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch (parseErr) {
+    return NextResponse.json({ error: `Invalid request body: ${parseErr.message}` }, { status: 400 });
+  }
+
+  try {
     const { action = 'research', businessSlug = 'callbird' } = body;
 
     switch (action) {
-      case 'research': return handleResearch(body, businessSlug);
-      case 'write': return handleWrite(body, businessSlug);
-      case 'template': return handleTemplate(body, businessSlug);
-      case 'qc': return handleQC(body, businessSlug);
+      case 'research': return await handleResearch(body, businessSlug);
+      case 'write': return await handleWrite(body, businessSlug);
+      case 'template': return await handleTemplate(body, businessSlug);
+      case 'qc': return await handleQC(body, businessSlug);
       default: return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
   } catch (err) {
@@ -136,34 +142,51 @@ async function handleWrite(body, businessSlug) {
   const { postId } = body;
   if (!postId) return NextResponse.json({ error: 'postId is required' }, { status: 400 });
 
-  // Load post and context
-  const { data: post } = await supabase
-    .from('blog_generated_posts').select('*').eq('id', postId).single();
-  if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 });
+  try {
+    // Load post and context
+    const { data: post, error: postErr } = await supabase
+      .from('blog_generated_posts').select('*').eq('id', postId).single();
+    if (postErr || !post) return NextResponse.json({ error: `Post not found: ${postErr?.message}` }, { status: 404 });
 
-  const { brandKit, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
-  const promptData = JSON.parse(post.generation_prompt);
-  const { research, notes, targetKeyword, postType } = promptData;
+    const { brandKit, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
 
-  // Write content
-  const startTime = Date.now();
-  const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes, referencePosts);
-  const duration = Date.now() - startTime;
+    let promptData;
+    try {
+      promptData = JSON.parse(post.generation_prompt);
+    } catch (parseErr) {
+      return NextResponse.json({
+        error: `Failed to parse research data: ${parseErr.message}. Prompt length: ${(post.generation_prompt || '').length}`,
+      }, { status: 500 });
+    }
+    const { research, notes, targetKeyword, postType } = promptData;
 
-  // Save raw content to post (will be replaced with HTML in step 3)
-  await supabase.from('blog_generated_posts').update({
-    html_content: contentOutput,
-    updated_at: new Date().toISOString(),
-  }).eq('id', postId);
+    // Write content
+    const startTime = Date.now();
+    const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes, referencePosts);
+    const duration = Date.now() - startTime;
 
-  // Log
-  await supabase.from('blog_generation_logs').insert({
-    post_id: postId, step: 'write_content', status: 'success',
-    details: { model: 'claude-sonnet-4-20250514' },
-    duration_ms: duration,
-  });
+    if (!contentOutput || contentOutput.length < 100) {
+      return NextResponse.json({ error: `Content generation returned empty or too short (${(contentOutput || '').length} chars)` }, { status: 500 });
+    }
 
-  return NextResponse.json({ success: true, step: 2, postId });
+    // Save raw content to post (will be replaced with HTML in step 3)
+    await supabase.from('blog_generated_posts').update({
+      html_content: contentOutput,
+      updated_at: new Date().toISOString(),
+    }).eq('id', postId);
+
+    // Log
+    await supabase.from('blog_generation_logs').insert({
+      post_id: postId, step: 'write_content', status: 'success',
+      details: { model: 'claude-sonnet-4-20250514', content_length: contentOutput.length },
+      duration_ms: duration,
+    });
+
+    return NextResponse.json({ success: true, step: 2, postId });
+  } catch (err) {
+    console.error(`[blog-farm] Step 2 error:`, err);
+    return NextResponse.json({ error: `Write step failed: ${err.message}` }, { status: 500 });
+  }
 }
 
 // ── STEP 3: HTML Template + Post-Dedup ──
@@ -172,19 +195,21 @@ async function handleTemplate(body, businessSlug) {
   const { postId } = body;
   if (!postId) return NextResponse.json({ error: 'postId is required' }, { status: 400 });
 
-  const { data: post } = await supabase
-    .from('blog_generated_posts').select('*').eq('id', postId).single();
-  if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 });
+  try {
+    const { data: post, error: postErr } = await supabase
+      .from('blog_generated_posts').select('*').eq('id', postId).single();
+    if (postErr || !post) return NextResponse.json({ error: `Post not found: ${postErr?.message}` }, { status: 404 });
 
-  const { data: biz } = await supabase
-    .from('blog_businesses').select('*').eq('slug', businessSlug).single();
+    const { data: biz } = await supabase
+      .from('blog_businesses').select('*').eq('slug', businessSlug).single();
+    if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
-  // Wrap content in HTML template
-  const startTime = Date.now();
-  const { metadata, html } = await wrapInTemplate(
-    post.html_content, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix
-  );
-  const duration = Date.now() - startTime;
+    // Wrap content in HTML template
+    const startTime = Date.now();
+    const { metadata, html } = await wrapInTemplate(
+      post.html_content, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix
+    );
+    const duration = Date.now() - startTime;
 
   const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
 
@@ -254,6 +279,10 @@ async function handleTemplate(body, businessSlug) {
     success: true, step: 3, postId, dedup: { unique: true },
     post: { title: metadata.title, slug: metadata.slug, word_count: wordCount, status: 'pending' },
   });
+  } catch (err) {
+    console.error(`[blog-farm] Step 3 error:`, err);
+    return NextResponse.json({ error: `Template step failed: ${err.message}` }, { status: 500 });
+  }
 }
 
 // ── STEP 4: Quality Control ──
@@ -262,20 +291,33 @@ async function handleQC(body, businessSlug) {
   const { postId } = body;
   if (!postId) return NextResponse.json({ error: 'postId is required' }, { status: 400 });
 
-  const { data: biz } = await supabase
-    .from('blog_businesses').select('*').eq('slug', businessSlug).single();
-  const { data: brandKit } = await supabase
-    .from('blog_brand_kits').select('*').eq('business_id', biz.id).single();
+  try {
+    const { data: biz } = await supabase
+      .from('blog_businesses').select('*').eq('slug', businessSlug).single();
+    if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
+    const { data: brandKit } = await supabase
+      .from('blog_brand_kits').select('*').eq('business_id', biz.id).single();
+    if (!brandKit) return NextResponse.json({ error: 'Brand kit not found' }, { status: 404 });
 
-  const qcResult = await runQualityControl(postId, biz, brandKit);
+    const qcResult = await runQualityControl(postId, biz, brandKit);
 
-  // Reload post for final state
-  const { data: post } = await supabase
-    .from('blog_generated_posts').select('title, slug, status, word_count').eq('id', postId).single();
+    const { data: post } = await supabase
+      .from('blog_generated_posts').select('title, slug, status, word_count').eq('id', postId).single();
 
-  return NextResponse.json({
-    success: true, step: 4, postId,
-    post: { title: post.title, slug: post.slug, status: post.status, word_count: post.word_count },
-    qc: { verdict: qcResult.verdict, scores: qcResult.scores, issues: qcResult.issues, suggestions: qcResult.suggestions },
-  });
+    return NextResponse.json({
+      success: true, step: 4, postId,
+      post: { title: post.title, slug: post.slug, status: post.status, word_count: post.word_count },
+      qc: {
+        verdict: qcResult.verdict,
+        scores: qcResult.scores,
+        issues: qcResult.issues,
+        suggestions: qcResult.suggestions,
+        hallucination_flags: qcResult.hallucination_flags || [],
+        business_protection_flags: qcResult.business_protection_flags || [],
+      },
+    });
+  } catch (err) {
+    console.error(`[blog-farm] Step 4 error:`, err);
+    return NextResponse.json({ error: `QC step failed: ${err.message}` }, { status: 500 });
+  }
 }

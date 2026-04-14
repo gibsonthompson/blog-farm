@@ -82,8 +82,14 @@ export default function Dashboard() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, businessSlug: 'callbird', ...body }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || data.reason || 'Step failed');
+    let data;
+    try {
+      const text = await res.text();
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Step "${action}" returned invalid response (HTTP ${res.status}). Check Vercel function logs.`);
+    }
+    if (!res.ok) throw new Error(data.error || data.reason || `Step "${action}" failed (HTTP ${res.status})`);
     return data;
   }
 
