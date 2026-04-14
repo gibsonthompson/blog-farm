@@ -12,6 +12,18 @@ export async function POST(request) {
 
     const result = await publishPost(postId);
 
+    // Check if cadence blocked the publish
+    if (result.blocked) {
+      const reason = result.errors[0]?.error || 'Publishing cadence limit reached';
+      return NextResponse.json({
+        success: false,
+        blocked: true,
+        error: reason,
+        reason,
+        suggestedDate: result.suggestedDate,
+      }, { status: 429 });
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Post published successfully',

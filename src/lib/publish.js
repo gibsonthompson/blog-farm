@@ -2,6 +2,8 @@ import supabase from './supabase.js';
 import { commitMultipleFiles, fetchFileContent } from './github.js';
 import { submitSitemap } from './google-search-console.js';
 import { submitToIndexNow } from './indexnow.js';
+import { checkPublishCadence } from './cadence.js';
+import { buildBacklinkUpdates } from './reverse-links.js';
 
 /**
  * Build the blog card HTML for inserting into blog.html
@@ -95,13 +97,24 @@ export async function publishPost(postId) {
   const owner = biz.github_owner;
   const repo = biz.github_repo;
   const branch = biz.github_branch || 'main';
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0];
   const blogFilePath = `${biz.blog_file_prefix}${post.slug}.html`;
   const blogUrl = `https://${biz.domain}/${blogFilePath}`;
-  // Sitemap uses clean URLs (no .html) because Vercel has cleanUrls: true
   const sitemapUrl = blogUrl.replace(/\.html$/, '');
 
   const results = { steps: [], errors: [] };
+
+  // 1.5 CADENCE CHECK — prevent bulk publishing
+  const cadence = await checkPublishCadence(biz.id, post.category);
+  if (!cadence.allowed) {
+    return {
+      steps: [],
+      errors: [{ step: 'cadence_check', error: cadence.reason }],
+      blocked: true,
+      suggestedDate: cadence.suggestedDate,
+    };
+  }
+  results.steps.push({ step: 'cadence_check', status: 'passed' });
 
   try {
     // 2. Fetch current blog.html and sitemap.xml from GitHub
@@ -118,14 +131,31 @@ export async function publishPost(postId) {
     const updatedBlogHtml = insertCardIntoBlogHtml(blogHtmlFile.content, cardHtml);
     const updatedSitemap = insertUrlIntoSitemap(sitemapFile.content, sitemapUrl, today);
 
-    // 4. Commit all 3 files in a SINGLE commit
-    const commitResult = await commitMultipleFiles(owner, repo, [
+    // 3.5 REVERSE INTERNAL LINKING — inject backlinks to new post in related existing posts
+    let backlinkUpdates = [];
+    try {
+      backlinkUpdates = await buildBacklinkUpdates(owner, repo, branch, biz.id, post, biz.blog_file_prefix);
+      if (backlinkUpdates.length > 0) {
+        results.steps.push({ step: 'reverse_links', status: 'success', count: backlinkUpdates.length,
+          files: backlinkUpdates.map(u => u.path) });
+      }
+    } catch (err) {
+      // Non-critical — log but continue
+      results.errors.push({ step: 'reverse_links', error: err.message });
+    }
+
+    // 4. Commit all files in a SINGLE commit (new post + blog index + sitemap + backlinked posts)
+    const allFiles = [
       { path: blogFilePath, content: post.html_content },
       { path: biz.blog_index_path, content: updatedBlogHtml },
       { path: biz.sitemap_path, content: updatedSitemap },
-    ], `blog: add ${post.slug}`, branch);
+      ...backlinkUpdates,
+    ];
+    const commitResult = await commitMultipleFiles(owner, repo, allFiles,
+      `blog: add ${post.slug}${backlinkUpdates.length > 0 ? ` + ${backlinkUpdates.length} backlinks` : ''}`,
+      branch);
 
-    results.steps.push({ step: 'github_commit', status: 'success', sha: commitResult.sha });
+    results.steps.push({ step: 'github_commit', status: 'success', sha: commitResult.sha, filesCommitted: allFiles.length });
 
     // 5. Update post status in DB
     await supabase.from('blog_generated_posts').update({

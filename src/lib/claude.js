@@ -173,8 +173,22 @@ ${brandKit.writing_style_examples}
 === CTAs ===
 ${brandKit.cta_templates.map(c => `• ${c}`).join('\n')}
 
-=== INTERNAL LINKS ===
+=== INTERNAL LINK TARGETS — USE THESE THROUGHOUT THE POST ===
+Link to at least 3 of these naturally. Choose links that are contextually relevant to the section.
+Do NOT force links — they should feel like a natural "learn more" for the reader.
+
+SERVICE PAGES (link when mentioning a specific industry):
 ${JSON.stringify(brandKit.internal_link_targets, null, 2)}
+
+EXISTING BLOG POSTS (link when a topic overlaps — these are your topical cluster):
+${existingPosts.map(p => `- "${p.title}" → ${p.slug}.html [keyword: ${p.primary_keyword || 'N/A'}]`).join('\n') || '(none yet)'}
+
+LINKING RULES:
+- Link to service pages when mentioning that industry (e.g., mention dentists → link to /dental)
+- Link to related blog posts when covering overlapping topics (e.g., discussing costs → link to cost analysis post)
+- Use descriptive anchor text, not "click here" — the anchor should describe what the reader will find
+- Spread links across the post, not all bunched in one section
+- A comparison post about CallBird vs X should link to other comparison posts for context
 
 === EXISTING POSTS — DO NOT CANNIBALIZE ===
 ${existingList || '(none)'}

@@ -36,6 +36,7 @@ export async function POST(request) {
         success: false,
         blocked: true,
         stage: 'pre_generation',
+        error: preCheck.reason,
         reason: preCheck.reason,
         conflicts: preCheck.conflicts,
       }, { status: 409 });
