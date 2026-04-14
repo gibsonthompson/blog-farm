@@ -36,14 +36,14 @@ export async function validateKeywordUniqueness(businessId, targetKeyword, postT
     const slugNorm = normalize(post.slug);
 
     // Check 1: High word overlap between target keyword and existing keyword/title
-    const kwOverlap = wordOverlap(targetNorm, kwNorm);
+    const kwOverlap = kwNorm ? wordOverlap(targetNorm, kwNorm) : 0;
     const titleOverlap = wordOverlap(targetNorm, titleNorm);
     const slugOverlap = wordOverlap(targetNorm, slugNorm);
 
-    // Check 2: One contains the other
+    // Check 2: One contains the other (skip if either side is empty or too short)
     const containsMatch = 
-      targetNorm.includes(kwNorm) || kwNorm.includes(targetNorm) ||
-      targetNorm.includes(slugNorm) || slugNorm.includes(targetNorm);
+      (kwNorm.length > 3 && (targetNorm.includes(kwNorm) || kwNorm.includes(targetNorm))) ||
+      (slugNorm.length > 3 && (targetNorm.includes(slugNorm) || slugNorm.includes(targetNorm)));
 
     if (kwOverlap >= 0.7 || titleOverlap >= 0.6 || containsMatch) {
       conflicts.push({
