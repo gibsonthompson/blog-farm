@@ -323,7 +323,7 @@ export async function loadBusinessContext(businessSlug) {
     .eq('business_id', biz.id)
     .eq('is_reference', true)
     .not('text_content', 'is', null)
-    .limit(3);
+    .limit(7);
 
   return {
     business: biz,
