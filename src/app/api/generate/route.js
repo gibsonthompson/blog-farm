@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { runResearch, writeContent, wrapInTemplate, loadBusinessContext } from '@/lib/claude.js';
 import { runQualityControl } from '@/lib/quality-control.js';
 import { validateKeywordUniqueness, validatePostUniqueness } from '@/lib/dedup-validator.js';
+import { validatePost } from '@/lib/post-validation.js';
 import supabase from '@/lib/supabase.js';
 
 // Fluid Compute on Hobby allows up to 300s — AI API I/O doesn't count as CPU time
@@ -186,6 +187,31 @@ async function handleTemplate(body, businessSlug) {
   const duration = Date.now() - startTime;
 
   const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
+
+  // ── PROGRAMMATIC VALIDATION — hard code checks ──
+  const { data: allExisting } = await supabase.from('blog_existing_posts')
+    .select('slug').eq('business_id', biz.id);
+  const existingSlugs = (allExisting || []).map(p => p.slug);
+
+  const validation = validatePost(html, metadata, existingSlugs);
+
+  if (!validation.valid) {
+    await supabase.from('blog_generated_posts').update({
+      title: metadata.title,
+      slug: metadata.slug,
+      html_content: html,
+      word_count: wordCount,
+      status: 'revision_needed',
+      qc_notes: JSON.stringify({ validation_errors: validation.errors, validation_warnings: validation.warnings }),
+      updated_at: new Date().toISOString(),
+    }).eq('id', postId);
+
+    return NextResponse.json({
+      success: true, step: 3, postId,
+      validation: { valid: false, errors: validation.errors, warnings: validation.warnings, stats: validation.stats },
+      post: { title: metadata.title, slug: metadata.slug, word_count: wordCount, status: 'revision_needed' },
+    });
+  }
 
   // Update post with final data
   await supabase.from('blog_generated_posts').update({

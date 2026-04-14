@@ -107,12 +107,25 @@ export default function Dashboard() {
       setGenStep('✍️ Writing content with research insights...');
       await callStep('write', { postId });
 
-      // Step 3: HTML template
-      setGenStep('🏗️ Building HTML & checking for duplicates...');
+      // Step 3: HTML template + validation
+      setGenStep('🏗️ Building HTML & running 25 validation checks...');
       const step3 = await callStep('template', { postId });
 
+      // If validation failed, show errors and stop
+      if (step3.validation && !step3.validation.valid) {
+        setGenResult({
+          ...step3,
+          qc: null,
+          validationFailed: true,
+        });
+        setKeyword('');
+        setNotes('');
+        fetchPosts();
+        return;
+      }
+
       // Step 4: Quality control
-      setGenStep('✅ Running quality control (28 checks)...');
+      setGenStep('✅ Running quality control (32 checks)...');
       const step4 = await callStep('qc', { postId });
 
       setGenResult(step4);
@@ -287,16 +300,44 @@ export default function Dashboard() {
 
           {genResult && (
             <div style={styles.resultBox}>
-              <strong>✅ Generated:</strong> {genResult.post.title} ({genResult.post.word_count} words)
-              <br />
-              <strong>QC Verdict:</strong> {genResult.qc.verdict}
-              {genResult.qc.scores && (
-                <span> — SEO: {genResult.qc.scores.seo}/10, Voice: {genResult.qc.scores.brand_voice}/10, Overall: {genResult.qc.scores.overall}/10</span>
-              )}
-              {genResult.qc.issues?.length > 0 && (
-                <div style={{ marginTop: 8, fontSize: 13, color: '#92400E' }}>
-                  Issues: {genResult.qc.issues.join(' | ')}
-                </div>
+              {genResult.validationFailed ? (
+                <>
+                  <strong style={{ color: '#DC2626' }}>⛔ Validation Failed:</strong> {genResult.post?.title || 'Unknown'}
+                  <div style={{ marginTop: 8, fontSize: 13, color: '#DC2626' }}>
+                    <strong>Errors:</strong> {genResult.validation.errors.join(' | ')}
+                  </div>
+                  {genResult.validation.warnings?.length > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 13, color: '#92400E' }}>
+                      <strong>Warnings:</strong> {genResult.validation.warnings.join(' | ')}
+                    </div>
+                  )}
+                </>
+              ) : genResult.qc ? (
+                <>
+                  <strong>✅ Generated:</strong> {genResult.post.title} ({genResult.post.word_count} words)
+                  <br />
+                  <strong>QC Verdict:</strong> {genResult.qc.verdict}
+                  {genResult.qc.scores && (
+                    <span> — SEO: {genResult.qc.scores.seo}/10, AEO: {genResult.qc.scores.aeo_readiness}/10, Info Gain: {genResult.qc.scores.information_gain}/10, Overall: {genResult.qc.scores.overall}/10</span>
+                  )}
+                  {genResult.qc.hallucination_flags?.length > 0 && (
+                    <div style={{ marginTop: 8, fontSize: 13, color: '#DC2626' }}>
+                      ⚠️ Hallucination flags: {genResult.qc.hallucination_flags.join(' | ')}
+                    </div>
+                  )}
+                  {genResult.qc.business_protection_flags?.length > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 13, color: '#DC2626' }}>
+                      🛡️ Business flags: {genResult.qc.business_protection_flags.join(' | ')}
+                    </div>
+                  )}
+                  {genResult.qc.issues?.length > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 13, color: '#92400E' }}>
+                      Issues: {genResult.qc.issues.join(' | ')}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <strong>⏳ Post generated, pending QC</strong>
               )}
             </div>
           )}
