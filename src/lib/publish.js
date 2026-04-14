@@ -67,8 +67,8 @@ function insertUrlIntoSitemap(sitemapXml, url, date) {
   // Insert before </urlset>
   const updatedSitemap = sitemapXml.replace('</urlset>', `${newEntry}\n</urlset>`);
 
-  // Update blog index lastmod
-  const blogIndexPattern = /(<loc>https?:\/\/[^<]*blog\.html<\/loc>\s*<lastmod>)[^<]*(<\/lastmod>)/;
+  // Update blog index lastmod (matches both /blog and /blog.html patterns)
+  const blogIndexPattern = /(<loc>https?:\/\/[^<]*\/blog(?:\.html)?<\/loc>\s*<lastmod>)[^<]*(<\/lastmod>)/;
   const finalSitemap = updatedSitemap.replace(blogIndexPattern, `$1${date}$2`);
 
   return finalSitemap;
@@ -98,6 +98,8 @@ export async function publishPost(postId) {
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
   const blogFilePath = `${biz.blog_file_prefix}${post.slug}.html`;
   const blogUrl = `https://${biz.domain}/${blogFilePath}`;
+  // Sitemap uses clean URLs (no .html) because Vercel has cleanUrls: true
+  const sitemapUrl = blogUrl.replace(/\.html$/, '');
 
   const results = { steps: [], errors: [] };
 
@@ -114,7 +116,7 @@ export async function publishPost(postId) {
     // 3. Build updated files
     const cardHtml = buildBlogCard(post, biz.domain, biz.blog_file_prefix);
     const updatedBlogHtml = insertCardIntoBlogHtml(blogHtmlFile.content, cardHtml);
-    const updatedSitemap = insertUrlIntoSitemap(sitemapFile.content, blogUrl, today);
+    const updatedSitemap = insertUrlIntoSitemap(sitemapFile.content, sitemapUrl, today);
 
     // 4. Commit all 3 files in a SINGLE commit
     const commitResult = await commitMultipleFiles(owner, repo, [
@@ -168,8 +170,8 @@ export async function publishPost(postId) {
   try {
     if (biz.indexnow_key) {
       await submitToIndexNow(biz.domain, biz.indexnow_key, [
-        blogUrl,
-        `https://${biz.domain}/${biz.blog_index_path}`,
+        sitemapUrl,
+        `https://${biz.domain}/blog`,
       ]);
       await supabase.from('blog_generated_posts').update({ indexnow_submitted: true }).eq('id', postId);
       results.steps.push({ step: 'indexnow', status: 'success' });

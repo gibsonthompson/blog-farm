@@ -1,5 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import supabase from './supabase.js';
+import {
+  CALLBIRD_BLOG_CSS,
+  CALLBIRD_NAV_HTML,
+  CALLBIRD_FOOTER_HTML,
+  CALLBIRD_FAQ_SCRIPT,
+  TEMPLATE_INSTRUCTIONS,
+} from '../templates/callbird-blog-template.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -95,6 +102,21 @@ ${existingPostsList || '(none yet)'}
 === POST TYPE: ${postType.toUpperCase()} ===
 ${getPostTypeInstructions(postType)}
 
+=== HTML TEMPLATE — USE THIS EXACT STRUCTURE ===
+${TEMPLATE_INSTRUCTIONS}
+
+=== EXACT CSS TO USE (copy verbatim into <style> tag) ===
+${CALLBIRD_BLOG_CSS}
+
+=== EXACT NAV HTML (copy verbatim) ===
+${CALLBIRD_NAV_HTML}
+
+=== EXACT FOOTER HTML (copy verbatim) ===
+${CALLBIRD_FOOTER_HTML}
+
+=== EXACT FAQ SCRIPT (copy verbatim before </body>) ===
+${CALLBIRD_FAQ_SCRIPT}
+
 === OUTPUT FORMAT ===
 You must return TWO things, clearly separated:
 
@@ -118,11 +140,11 @@ You must return TWO things, clearly separated:
 <html_content>
 <!DOCTYPE html>
 <html lang="en">
-... complete blog post HTML ...
+... complete blog post HTML using the exact template above ...
 </html>
 </html_content>
 
-The HTML must be a COMPLETE, standalone file — not a fragment. It must include the full <head> with GTM, meta tags, OG tags, canonical URL, and inline CSS. It must include the full header/nav, article content, FAQ section with JSON-LD, CTA section, and footer.`;
+The HTML must be a COMPLETE standalone file matching the template structure exactly.`;
 }
 
 /**
