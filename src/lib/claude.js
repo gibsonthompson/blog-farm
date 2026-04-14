@@ -30,36 +30,31 @@ H — "The Expert Roundup": 5-8 key questions, each answer AEO-optimized.
 export async function runResearch(targetKeyword, postType) {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 4000,
-    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+    max_tokens: 2000,
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 2 }],
     messages: [{
       role: 'user',
-      content: `You are a senior SEO content strategist researching a blog post topic.
+      content: `SEO content strategist: research "${targetKeyword}" for a blog post (${postType}) about AI receptionists for small businesses ($99-$499/mo, callbirdai.com).
 
-TARGET KEYWORD: "${targetKeyword}"
-POST TYPE: ${postType}
-BUSINESS: AI receptionist for small businesses (callbirdai.com, $99-$499/mo)
-
-Research steps:
-1. Search "${targetKeyword}" — analyze top 3-5 results. What do they cover? What's WEAK or MISSING?
-2. Search for questions people ask about this topic
-3. Search for fresh statistics or data (2025-2026) related to this topic
+Search for "${targetKeyword}" and analyze what's ranking. Then search for related statistics or data.
 
 Return JSON:
 {
-  "top_results_summary": "What the top results cover and their weaknesses",
-  "content_gaps": ["Topics/angles the top results miss"],
-  "unique_angle": "Our specific angle that creates information gain",
-  "hook": "Compelling opening — stat, scenario, or surprising fact",
-  "fresh_data_points": ["Stats/data found with source context"],
-  "questions_people_ask": ["Real questions from search results"],
+  "top_results_summary": "Top results and their weaknesses",
+  "content_gaps": ["What top results miss"],
+  "unique_angle": "Our angle for information gain",
+  "hook": "Opening hook — stat or scenario",
+  "fresh_data_points": ["Stats found"],
+  "questions_people_ask": ["Questions from search results"],
   "recommended_framework": "A/B/C/D/E/F/G/H",
-  "framework_reasoning": "Why this framework fits",
-  "suggested_sections": ["Section ideas that create information gain"],
-  "competitor_claims_to_verify": ["Claims from competitors to address"]
+  "framework_reasoning": "Why",
+  "suggested_sections": ["Unique section ideas"],
+  "competitor_claims_to_verify": ["Claims to address"]
 }
 
-Return ONLY valid JSON. No markdown fences.`
+Frameworks: A=Hidden Cost, B=Comparison, C=Industry Insider, D=Data Story, E=Step-by-Step, F=Myth Buster, G=Decision Framework, H=Expert Roundup.
+
+ONLY valid JSON. No fences.`
     }],
   });
 

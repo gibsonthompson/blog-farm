@@ -40,12 +40,17 @@ async function handleResearch(body, businessSlug) {
   if (!targetKeyword) return NextResponse.json({ error: 'targetKeyword is required' }, { status: 400 });
   if (!postType) return NextResponse.json({ error: 'postType is required' }, { status: 400 });
 
+  console.log(`[blog-farm] Step 1: Research "${targetKeyword}" (${postType})`);
+  const stepStart = Date.now();
+
   const { data: biz } = await supabase
     .from('blog_businesses').select('*').eq('slug', businessSlug).single();
   if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
   // Dedup gate
+  console.log(`[blog-farm] Running dedup check... (${Date.now() - stepStart}ms)`);
   const preCheck = await validateKeywordUniqueness(biz.id, targetKeyword, postType);
+  console.log(`[blog-farm] Dedup done (${Date.now() - stepStart}ms)`);
   if (!preCheck.safe) {
     return NextResponse.json({
       success: false, blocked: true, stage: 'pre_generation',
@@ -54,8 +59,16 @@ async function handleResearch(body, businessSlug) {
   }
 
   // Research
+  console.log(`[blog-farm] Starting web research... (${Date.now() - stepStart}ms)`);
   const startTime = Date.now();
-  const research = await runResearch(targetKeyword, postType);
+  let research;
+  try {
+    research = await runResearch(targetKeyword, postType);
+  } catch (err) {
+    console.error(`[blog-farm] Research failed after ${Date.now() - startTime}ms:`, err.message);
+    return NextResponse.json({ error: `Research failed: ${err.message}` }, { status: 500 });
+  }
+  console.log(`[blog-farm] Research complete (${Date.now() - stepStart}ms total)`);
   const duration = Date.now() - startTime;
 
   // Create post record with research saved
