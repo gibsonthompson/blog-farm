@@ -3,16 +3,38 @@ import supabase from './supabase.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ─────────────────────────────────────────────────────────
+//  DOMAIN-SPECIFIC STOP WORDS
+//  On a site about AI receptionists, these words appear in
+//  EVERY title. They're noise, not signal. The meaningful
+//  differentiation is in the OTHER words.
+// ─────────────────────────────────────────────────────────
+const DOMAIN_STOP_WORDS = new Set([
+  'ai', 'receptionist', 'receptionists', 'best', 'callbird',
+  'call', 'bird', 'answering', 'service', 'phone', 'virtual',
+]);
+
+const GENERAL_STOP_WORDS = new Set([
+  'a','an','the','for','and','or','but','in','on','at','to','of','is','it',
+  'by','with','from','as','are','was','were','be','been','being','have','has',
+  'had','do','does','did','will','would','shall','should','may','might','can',
+  'could','your','my','our','their','his','her','its','this','that','these',
+  'those','what','which','who','whom','how','why','when','where','vs','versus',
+  'top','guide','complete','ultimate','about','need','know','why','get',
+]);
+
 /**
- * Pre-generation validation: Check if a target keyword is too close
- * to any existing post's keyword/title before spending tokens on generation.
+ * Pre-generation validation.
  * 
- * Uses normalized string matching + Claude as a judge for borderline cases.
+ * Strategy (based on SEO best practices):
+ * 1. Exact slug match → hard block (true duplicate)
+ * 2. High word overlap after removing domain noise → send to Claude for INTENT judgment
+ * 3. Low overlap → safe, pass through
  * 
- * @returns {{ safe: boolean, conflicts: Array, reason?: string }}
+ * Word matching is a FAST PRE-FILTER. Claude makes the actual cannibalization decision
+ * based on search intent, not word similarity.
  */
 export async function validateKeywordUniqueness(businessId, targetKeyword, postType) {
-  // Load all existing posts
   const { data: existing } = await supabase
     .from('blog_existing_posts')
     .select('title, slug, primary_keyword, category')
@@ -27,60 +49,54 @@ export async function validateKeywordUniqueness(businessId, targetKeyword, postT
   const allPosts = [...(existing || []), ...(generated || [])];
   if (allPosts.length === 0) return { safe: true, conflicts: [] };
 
-  const targetNorm = normalize(targetKeyword);
-  const conflicts = [];
+  // Check for exact slug collision (true duplicate — hard block)
+  const targetSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const slugMatch = allPosts.find(p => p.slug === targetSlug);
+  if (slugMatch) {
+    return {
+      safe: false,
+      conflicts: [slugMatch],
+      reason: `Exact slug collision: "${targetSlug}" already exists as "${slugMatch.title}".`,
+    };
+  }
+
+  // Find potentially overlapping posts using domain-aware word matching
+  const targetWords = domainNormalize(targetKeyword);
+  const candidates = [];
 
   for (const post of allPosts) {
-    const titleNorm = normalize(post.title);
-    const kwNorm = normalize(post.primary_keyword || '');
-    const slugNorm = normalize(post.slug);
+    const titleWords = domainNormalize(post.title);
+    const kwWords = post.primary_keyword ? domainNormalize(post.primary_keyword) : '';
+    const slugWords = domainNormalize(post.slug.replace(/-/g, ' '));
 
-    // Check 1: High word overlap between target keyword and existing keyword/title
-    const kwOverlap = kwNorm ? wordOverlap(targetNorm, kwNorm) : 0;
-    const titleOverlap = wordOverlap(targetNorm, titleNorm);
-    const slugOverlap = wordOverlap(targetNorm, slugNorm);
+    // Jaccard on domain-normalized strings (domain noise removed)
+    const titleScore = jaccard(targetWords, titleWords);
+    const kwScore = kwWords ? jaccard(targetWords, kwWords) : 0;
+    const slugScore = jaccard(targetWords, slugWords);
+    const bestScore = Math.max(titleScore, kwScore, slugScore);
 
-    // Check 2: One contains the other (skip if either side is empty or too short)
-    const containsMatch = 
-      (kwNorm.length > 3 && (targetNorm.includes(kwNorm) || kwNorm.includes(targetNorm))) ||
-      (slugNorm.length > 3 && (targetNorm.includes(slugNorm) || slugNorm.includes(targetNorm)));
-
-    if (kwOverlap >= 0.7 || titleOverlap >= 0.6 || containsMatch) {
-      conflicts.push({
-        existingTitle: post.title,
-        existingKeyword: post.primary_keyword,
-        existingSlug: post.slug,
-        matchType: containsMatch ? 'contains' : 'word_overlap',
-        overlapScore: Math.max(kwOverlap, titleOverlap, slugOverlap),
+    // Only consider posts with meaningful overlap (after domain words removed)
+    if (bestScore >= 0.4) {
+      candidates.push({
+        title: post.title,
+        keyword: post.primary_keyword,
+        slug: post.slug,
+        category: post.category,
+        overlapScore: bestScore,
       });
     }
   }
 
-  if (conflicts.length === 0) return { safe: true, conflicts: [] };
+  // No meaningful overlap → safe
+  if (candidates.length === 0) return { safe: true, conflicts: [] };
 
-  // For borderline cases (1-2 conflicts with < 0.85 overlap), use Claude as a judge
-  const highConfidence = conflicts.filter(c => c.overlapScore >= 0.85 || c.matchType === 'contains');
-  
-  if (highConfidence.length > 0) {
-    return {
-      safe: false,
-      conflicts: highConfidence,
-      reason: `Target keyword "${targetKeyword}" directly overlaps with existing post(s): ${highConfidence.map(c => `"${c.existingTitle}" (keyword: ${c.existingKeyword})`).join(', ')}. Choose a different angle or keyword.`,
-    };
-  }
-
-  // Borderline — ask Claude to judge
-  const judgment = await judgeWithClaude(targetKeyword, postType, conflicts);
-  return judgment;
+  // Send candidates to Claude for INTENT-BASED judgment
+  return await judgeWithClaude(targetKeyword, postType, candidates);
 }
 
 /**
- * Post-generation validation: After a post is generated, check its
- * actual title and content against all existing posts for overlap.
- * This catches cases where the AI drifted into existing territory
- * despite the prompt instructions.
- * 
- * @returns {{ unique: boolean, conflicts: Array, recommendation?: string }}
+ * Post-generation validation.
+ * Checks the GENERATED title/keyword (which may have drifted from the target).
  */
 export async function validatePostUniqueness(businessId, newTitle, newKeyword, newSlug) {
   const { data: existing } = await supabase
@@ -95,27 +111,25 @@ export async function validatePostUniqueness(businessId, newTitle, newKeyword, n
     .in('status', ['pending', 'approved', 'published']);
 
   const allPosts = [...(existing || []), ...(generated || [])];
-  const newTitleNorm = normalize(newTitle);
-  const newKwNorm = normalize(newKeyword);
-  const newSlugNorm = normalize(newSlug);
+
+  // Exact slug match = real problem
+  const slugMatch = allPosts.find(p => normalize(p.slug) === normalize(newSlug));
+  if (slugMatch) {
+    return {
+      unique: false,
+      conflicts: [{ ...slugMatch, matchType: 'exact_slug' }],
+      recommendation: `Slug "${newSlug}" already exists. Needs a different slug.`,
+    };
+  }
+
+  // Check domain-normalized overlap
+  const newTitleWords = domainNormalize(newTitle);
   const conflicts = [];
 
   for (const post of allPosts) {
-    if (normalize(post.slug) === newSlugNorm) {
-      conflicts.push({ ...post, matchType: 'exact_slug' });
-      continue;
-    }
-
-    const titleSim = wordOverlap(newTitleNorm, normalize(post.title));
-    const kwSim = wordOverlap(newKwNorm, normalize(post.primary_keyword || ''));
-
-    if (titleSim >= 0.65 || kwSim >= 0.75) {
-      conflicts.push({
-        ...post,
-        matchType: 'similar',
-        titleSimilarity: titleSim,
-        keywordSimilarity: kwSim,
-      });
+    const titleScore = jaccard(newTitleWords, domainNormalize(post.title));
+    if (titleScore >= 0.6) {
+      conflicts.push({ ...post, matchType: 'similar', titleSimilarity: titleScore });
     }
   }
 
@@ -124,7 +138,7 @@ export async function validatePostUniqueness(businessId, newTitle, newKeyword, n
   return {
     unique: false,
     conflicts,
-    recommendation: `Generated post "${newTitle}" (keyword: "${newKeyword}") is too similar to: ${conflicts.map(c => `"${c.title}"`).join(', ')}. The AI should target a different angle.`,
+    recommendation: `Generated post "${newTitle}" may overlap with: ${conflicts.map(c => `"${c.title}"`).join(', ')}. Review before publishing.`,
   };
 }
 
@@ -132,54 +146,53 @@ export async function validatePostUniqueness(businessId, newTitle, newKeyword, n
 // ── Helpers ──────────────────────────────────────────────
 
 /**
- * Normalize a string for comparison:
- * lowercase, remove punctuation, collapse whitespace, remove stop words
+ * Normalize removing BOTH general and domain-specific stop words.
+ * After this, "Best AI Receptionist for Dentists" becomes just "dentists"
+ * and "AI Receptionist Medical Offices" becomes "medical offices".
+ * This isolates the ACTUAL differentiating topic.
  */
-function normalize(str) {
+function domainNormalize(str) {
   if (!str) return '';
-  const stopWords = new Set([
-    'a','an','the','for','and','or','but','in','on','at','to','of','is','it',
-    'by','with','from','as','are','was','were','be','been','being','have','has',
-    'had','do','does','did','will','would','shall','should','may','might','can',
-    'could','your','my','our','their','his','her','its','this','that','these',
-    'those','what','which','who','whom','how','why','when','where','vs','versus',
-  ]);
-
   return str
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter(w => w.length > 1 && !stopWords.has(w))
+    .filter(w => w.length > 1 && !GENERAL_STOP_WORDS.has(w) && !DOMAIN_STOP_WORDS.has(w))
     .join(' ');
 }
 
 /**
- * Calculate word overlap using Jaccard similarity (intersection / union).
- * Returns 0-1 where 1 means identical word sets.
- * Jaccard handles different-length comparisons fairly — 
- * "AI receptionist" vs "AI receptionist medical offices" = 0.5, not 1.0.
+ * Basic normalize (no domain stop words) for slug comparison.
  */
-function wordOverlap(a, b) {
+function normalize(str) {
+  if (!str) return '';
+  return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Jaccard similarity: intersection / union.
+ */
+function jaccard(a, b) {
   if (!a || !b) return 0;
-  const wordsA = new Set(a.split(/\s+/));
-  const wordsB = new Set(b.split(/\s+/));
-  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  const setA = new Set(a.split(/\s+/).filter(Boolean));
+  const setB = new Set(b.split(/\s+/).filter(Boolean));
+  if (setA.size === 0 || setB.size === 0) return 0;
 
   let intersection = 0;
-  for (const w of wordsA) {
-    if (wordsB.has(w)) intersection++;
+  for (const w of setA) {
+    if (setB.has(w)) intersection++;
   }
-
-  const union = wordsA.size + wordsB.size - intersection;
+  const union = setA.size + setB.size - intersection;
   return intersection / union;
 }
 
 /**
- * Use Claude as a semantic judge for borderline cases.
+ * Claude judges SEARCH INTENT overlap, not word similarity.
+ * This is the actual cannibalization check.
  */
-async function judgeWithClaude(targetKeyword, postType, conflicts) {
-  const conflictList = conflicts
-    .map(c => `- "${c.existingTitle}" [keyword: ${c.existingKeyword}] [overlap: ${(c.overlapScore * 100).toFixed(0)}%]`)
+async function judgeWithClaude(targetKeyword, postType, candidates) {
+  const candidateList = candidates
+    .map(c => `- "${c.title}" [category: ${c.category || 'unknown'}] [word overlap: ${(c.overlapScore * 100).toFixed(0)}%]`)
     .join('\n');
 
   const response = await anthropic.messages.create({
@@ -187,21 +200,27 @@ async function judgeWithClaude(targetKeyword, postType, conflicts) {
     max_tokens: 500,
     messages: [{
       role: 'user',
-      content: `You are an SEO expert checking for keyword cannibalization.
+      content: `You are an SEO expert checking for keyword CANNIBALIZATION — when two pages compete for the SAME search query and user intent.
 
-I want to write a NEW ${postType} blog post targeting: "${targetKeyword}"
+I want to write a NEW "${postType}" blog post targeting: "${targetKeyword}"
 
-These EXISTING posts have some keyword overlap:
-${conflictList}
+These existing posts have some word overlap:
+${candidateList}
 
-Would the new post cannibalize any of these existing posts? Consider:
-- Would they compete for the same search queries?
-- Is the target keyword just a slight variation of an existing one?
-- Or is it genuinely a different topic/angle despite sharing some words?
+IMPORTANT: Shared domain terms like "AI receptionist" do NOT indicate cannibalization. 
+What matters is whether a user searching for "${targetKeyword}" would find the existing post equally relevant.
 
-Respond with ONLY valid JSON:
-{"safe": true/false, "reason": "one sentence explanation"}
+Examples of NOT cannibalization:
+- "AI receptionist for dentists" vs "AI receptionist for plumbers" → different industries
+- "AI receptionist ROI calculator" vs "What is an AI receptionist" → different intent (cost analysis vs definition)
+- "CallBird vs Smith.ai" vs "CallBird vs Ruby" → different competitors
 
+Examples of REAL cannibalization:
+- "AI receptionist cost guide" vs "AI receptionist pricing guide" → same intent
+- "Best AI receptionist for dental offices" vs "Best AI receptionist for dentists" → same audience
+
+Is the new post safe to write, or would it cannibalize an existing post?
+Respond with ONLY valid JSON: {"safe": true/false, "reason": "one sentence explanation"}
 No markdown fences.`
     }],
   });
@@ -211,15 +230,11 @@ No markdown fences.`
     const result = JSON.parse(text);
     return {
       safe: result.safe,
-      conflicts,
+      conflicts: candidates,
       reason: result.reason,
     };
   } catch {
-    // If parsing fails, be conservative — block it
-    return {
-      safe: false,
-      conflicts,
-      reason: 'Could not determine uniqueness — review manually.',
-    };
+    // Parse failed — default to SAFE (don't block on parsing errors)
+    return { safe: true, conflicts: candidates, reason: 'Could not parse judgment — allowing with caution.' };
   }
 }
