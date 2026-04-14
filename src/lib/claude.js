@@ -138,7 +138,16 @@ USE: ${research.recommended_framework || 'Best fit'}
 7. NO SLOP: No "in today's fast-paced world." Write like a human expert.
 8. UNIQUE INTRO: Hook with research angle, not generic definition
 9. HONEST: Acknowledge competitor strengths if comparing
-10. FRESHNESS: Reference current year, recent data
+10. FRESHNESS: The current year is 2026. Always use 2026 in titles and content. NEVER use 2025 or earlier years as if they are current.
+
+=== CRITICAL: ANTI-HALLUCINATION RULES ===
+These rules are NON-NEGOTIABLE. Violation will cause the post to be rejected.
+
+11. NEVER INVENT SOURCES: Do NOT fabricate organization names, institute names, study names, or research firm names. No "Customer Service Institute," no "Emergency Service Institute," no fake surveys or reports. If you don't know the real source, DO NOT attribute the claim to a made-up one.
+12. REAL SOURCES ONLY: Only cite organizations that actually exist and you found in the research phase. Acceptable: "Bureau of Labor Statistics," "Harvard Business Review," "Salesforce research," "HubSpot data" — organizations anyone can verify with a Google search.
+13. SOFTEN UNVERIFIED CLAIMS: For statistics you believe are accurate but can't name the exact source, use hedging language: "Industry data suggests...", "Research indicates...", "Studies show...", "According to industry estimates..." — NEVER attribute to a specific organization you aren't certain exists.
+14. NO FAKE PERCENTAGES: Do not invent hyper-specific statistics (e.g., "73.2% of customers..."). Round numbers or ranges are more credible: "roughly 70%", "between 60-80%", "nearly half."
+15. AUTHOR IS "Gibson Thompson": The author byline must be "Gibson Thompson" — never "CallBird Team" or "AI Writer." Include in schema as author with @type Person.
 ${notes ? `\nPUBLISHER NOTES: ${notes}` : ''}
 
 === OUTPUT FORMAT ===

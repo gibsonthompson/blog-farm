@@ -87,24 +87,31 @@ Review the HTML and return a JSON object with this exact structure:
     "no_generic_ai_intro": <true/false — first 200 words must NOT be generic>,
     "answer_first_structure": <true/false — do H2 sections lead with a direct 40-60 word answer?>,
     "has_statistics_throughout": <true/false — verifiable data points every 150-200 words?>,
-    "entity_clarity_in_intro": <true/false — first 200 words define what/who/cost/where?>
+    "entity_clarity_in_intro": <true/false — first 200 words define what/who/cost/where?>,
+    "no_hallucinated_sources": <true/false — CRITICAL: are ALL named organizations, institutes, studies real and verifiable? Flag ANY that look invented like "Customer Service Institute" or "Emergency Service Institute">,
+    "no_fake_statistics": <true/false — are statistics presented with appropriate hedging when source is unknown? No hyper-specific unattributed percentages like "73.2%">,
+    "author_is_gibson_thompson": <true/false — author byline says "Gibson Thompson" not "CallBird Team" or generic>,
+    "correct_year_references": <true/false — all year references use 2026, not 2025 or earlier as if current>
   },
   "issues": ["list of specific issues found"],
   "suggestions": ["list of improvement suggestions"],
+  "hallucination_flags": ["list any organization names, study names, or statistics that appear fabricated — be specific"],
   "information_gain_assessment": "1-2 sentences on what unique value this post adds vs typical competitor content",
   "aeo_assessment": "1-2 sentences on how well-structured this is for AI engine citation",
   "verdict": "PASS" | "NEEDS_REVISION" | "REJECT"
 }
 
 Verdict rules:
-- PASS: overall >= 8 AND all critical checks pass (gtm, phone, pricing, no fabrications, answer_first_structure, has_statistics_throughout)
-- NEEDS_REVISION: overall 5-7 OR AEO/information gain scores below 7
-- REJECT: overall < 5 OR critical brand violations OR information_gain score below 4
+- PASS: overall >= 8 AND all critical checks pass (gtm, phone, pricing, no fabrications, no_hallucinated_sources, no_fake_statistics, answer_first_structure)
+- NEEDS_REVISION: overall 5-7 OR AEO/information gain scores below 7 OR hallucination flags found
+- REJECT: overall < 5 OR critical brand violations OR information_gain score below 4 OR multiple hallucinated sources
 
 IMPORTANT SCORING GUIDANCE:
 - information_gain: Score 8+ ONLY if the post contains insights, data, or analysis you would NOT find in the first page of Google results for this keyword. Score 5 or below if it reads like a rewrite of existing content.
 - aeo_readiness: Score 8+ ONLY if each major section has a clear, extractable answer that an AI engine could cite standalone. Score 5 or below if answers are buried in paragraphs or require surrounding context.
 - content_quality: Score 8+ ONLY if a human expert in this industry would find this genuinely useful. Score 5 or below if it reads like generic AI content with industry terms swapped in.
+- factual_accuracy: Score 5 or below if ANY named organization, institute, or study cannot be verified as real. Common AI fabrications include: "[Industry] Service Institute," "[Topic] Research Foundation," or any organization with a generic "[Adjective] [Noun] Institute" pattern. If you aren't confident an organization exists, FLAG IT in hallucination_flags.
+- YEAR CHECK: The current year is 2026. If the title or content says "2025" as if it's the current year, that's an immediate NEEDS_REVISION.
 
 Return ONLY the JSON — no markdown fences, no explanation.`
     }],
