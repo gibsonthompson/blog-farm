@@ -10,7 +10,7 @@ import {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const RATE_LIMIT_DELAY_MS = 10000; // 10 seconds between API calls
+const RATE_LIMIT_DELAY_MS = 0; // Tier 2+ has sufficient ITPM for sequential calls
 
 // ─────────────────────────────────────────────────────────
 //  CONTENT FRAMEWORKS LIBRARY

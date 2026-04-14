@@ -4,10 +4,8 @@ import { runQualityControl } from '@/lib/quality-control.js';
 import { validateKeywordUniqueness, validatePostUniqueness } from '@/lib/dedup-validator.js';
 import supabase from '@/lib/supabase.js';
 
-// 3-phase generation + dedup + QC takes ~90 seconds
+// 3-phase generation + dedup + QC
 export const maxDuration = 120;
-
-function delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 export async function POST(request) {
   try {
@@ -70,9 +68,7 @@ export async function POST(request) {
 
     // ── Step 2: Run quality control ──
     // Wait for rate limit window after generation's 3 API calls
-    // Wait briefly for rate limit window
-    await delay(10000);
-
+    // ── Step 2: Run quality control ──
     const { data: brandKit } = await supabase
       .from('blog_brand_kits')
       .select('*')
