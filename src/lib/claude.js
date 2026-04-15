@@ -191,11 +191,15 @@ IMPORTANT: The framework is a GUIDE, not a straitjacket. If a section doesn't ea
 - 4-6 FAQ items with standalone answers (each answer works if quoted alone by an AI engine)
 
 EXPERIENCE & CREDIBILITY RULES:
-- NEVER fabricate first-person anecdotes. No "I've seen businesses...", "I've helped companies...", "After working with hundreds of..." — Gibson's name is on this, but these are AI-generated claims. If you can't verify the experience happened, don't claim it.
-- Instead of fake anecdotes, use HYPOTHETICAL framing: "Consider a plumber who..." or "A typical HVAC company..." or "Here's how the math works for a dental office..."
-- NEVER claim to have "tested" or "reviewed" products you haven't. Say "based on published pricing" or "according to their website" instead of "after testing seven services."
-- If you include a calculation, VERIFY THE MATH ADDS UP. If you say "$X per year" then show a formula, the formula must equal $X. Contradicting your own math destroys credibility instantly.
-- Statistics must be internally consistent. Don't cite "62% missed calls" in one section and "74% missed calls" in another for the same claim.
+- NEVER fabricate first-person anecdotes. No "I've seen businesses...", "I've helped companies...", "After working with hundreds of..."
+  Instead use HYPOTHETICAL framing: "Consider a plumber who..." or "A typical HVAC company..."
+- NEVER claim to have "tested" or "reviewed" or "analyzed data from" products/businesses you haven't.
+- NEVER invent sample sizes or data sets. No "after analyzing 2,074 businesses" or "based on data from 500 implementations." These are fabricated authority claims.
+- NEVER present invented percentages as data. No "23% of businesses abandon" or "15% of integrations fail" or "3% failure rate vs 8% failure rate." If you don't have a real source, DON'T QUOTE A SPECIFIC NUMBER. Use qualitative language: "some businesses," "a significant portion," "most users."
+- NEVER describe CallBird features that aren't explicitly listed in the company context above. If the brand kit doesn't mention Salesforce integration, don't claim it exists. If the brand kit doesn't mention website scraping, don't describe it as a feature. ONLY describe capabilities that are explicitly mentioned.
+- For industry scenarios, describe what an AI RECEPTIONIST actually does — answer calls, schedule appointments, detect urgency, send SMS notifications, transfer calls. Do NOT describe it performing technician tasks (diagnosing furnace error codes), clinical tasks (checking medical symptoms), or legal tasks (running conflict checks). The AI answers the phone and connects people to the right human — it doesn't replace the professional.
+- If you include a calculation, VERIFY THE MATH ADDS UP internally.
+- Statistics must be internally consistent throughout the post.
 
 STRUCTURAL VARIETY:
 - Do NOT use numbered "Hidden Cost #1, #2, #3" or "Step 1, Step 2, Step 3" patterns for more than 3 items. Break up long numbered lists into natural prose sections with descriptive H3 headings.
@@ -295,15 +299,29 @@ Service page links as <a href="https://callbirdai.com/path">anchor text</a>.
 
 Make your H2 opening paragraphs naturally concise and quotable — an AI engine should be able to extract the first 2 sentences under any H2 as a standalone answer without needing a special box.
 </content>
+
+<self_review>
+BEFORE outputting your final response, mentally review the entire post against these questions:
+1. Would a reader who Googled "${targetKeyword}" learn something they couldn't find on the first page of results? If not, your angle isn't unique enough.
+2. Does any sentence undermine CallBird's value proposition? (e.g., calling ROI "fiction," suggesting setup is complex, creating doubt about AI receptionists)
+3. Have you invented any statistics, sample sizes, data sets, or organization names? Remove them.
+4. Have you described CallBird doing things not in the company context? (e.g., integrating with software not listed, performing professional tasks like diagnosis or legal checks) Remove them.
+5. Does the math check out? If you show a formula, does the result match the claim?
+6. Would Gibson Thompson — a real business owner — actually write this sentence? If it sounds like a content marketer, rewrite it.
+7. Are you using the same formula/template 3+ times with different numbers? Show one detailed example and summarize the rest.
+</self_review>
 ${notes ? `\n<publisher_notes>${notes}</publisher_notes>` : ''}`;
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 12000,
+    max_tokens: 16000,
+    thinking: { type: 'enabled', budget_tokens: 5000 },
     messages: [{ role: 'user', content: prompt }],
   });
 
-  return response.content[0].text;
+  // With extended thinking, response has thinking blocks + text blocks
+  const textBlocks = response.content.filter(b => b.type === 'text');
+  return textBlocks.map(b => b.text).join('\n').trim();
 }
 
 // ─────────────────────────────────────────────────────────

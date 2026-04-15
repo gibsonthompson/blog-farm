@@ -20,8 +20,9 @@ export async function runQualityControl(postId, business, brandKit) {
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 4000,
-    system: `You are a strict quality control reviewer for blog posts. You review content against specific brand standards and SEO requirements. You MUST be critical — do not pass content that has issues.
+    max_tokens: 6000,
+    thinking: { type: 'enabled', budget_tokens: 3000 },
+    system: `You are a strict quality control reviewer for blog posts. You review content against specific brand standards and SEO requirements. You MUST be critical — do not pass content that has issues. Think carefully before scoring.
 
 Score each category 1-10 and provide specific feedback. Return ONLY valid JSON.`,
 
@@ -120,8 +121,10 @@ IMPORTANT SCORING GUIDANCE:
 - YEAR CHECK: 2026 only. 2025 used as current = NEEDS_REVISION.
 - BUSINESS PROTECTION: Competitor recommendations or category fear = INSTANT REJECT.
 - FABRICATED EXPERIENCE: Flag first-person claims like "I've seen..." or "After helping hundreds..." — these are AI hallucinations.
+- FABRICATED DATA: Flag any claims like "after analyzing X,XXX businesses" or "X% failure rate" that present invented numbers as real research data. If a percentage or sample size doesn't come from a named, verifiable source, it's probably fabricated. Especially suspicious: precise failure rates, conversion rates, or sample sizes that sound authoritative but have no attribution.
+- FABRICATED FEATURES: Flag any CallBird feature claims that aren't in the company description provided. If the post claims CallBird integrates with Salesforce, HubSpot, or Zapier, that's fabricated. If it describes the AI performing medical triage, legal conflict checks, or technical diagnostics, that's wrong — the AI answers phones and connects callers to humans.
 - MATH VERIFICATION: All calculations must be internally consistent. If headline says X, formula must produce X.
-- TEMPLATE-FILLING: If the same formula appears 3+ times with only the numbers changed (e.g., HVAC example, dental example, legal example all using identical structure), score content_quality 5 or below. One detailed example + a summary table is better than three identical calculations.
+- TEMPLATE-FILLING: If the same formula appears 3+ times with only the numbers changed, score content_quality 5 or below.
 
 Return ONLY the JSON — no markdown fences, no explanation.`
     }],
@@ -129,7 +132,9 @@ Return ONLY the JSON — no markdown fences, no explanation.`
 
   let qcResult;
   try {
-    const text = response.content[0].text.trim().replace(/```json\n?|```/g, '');
+    // With extended thinking, filter for text blocks only
+    const textBlocks = response.content.filter(b => b.type === 'text');
+    const text = textBlocks.map(b => b.text).join('\n').trim().replace(/```json\n?|```/g, '');
     qcResult = JSON.parse(text);
   } catch (e) {
     throw new Error(`QC response was not valid JSON: ${e.message}`);
