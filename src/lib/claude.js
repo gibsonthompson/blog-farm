@@ -34,24 +34,34 @@ export async function runResearch(targetKeyword, postType) {
     tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
     messages: [{
       role: 'user',
-      content: `SEO content strategist: research "${targetKeyword}" for a blog post (${postType}) about AI receptionists for small businesses ($99-$499/mo, callbirdai.com).
+      content: `You are researching "${targetKeyword}" to write a blog post (${postType}) for callbirdai.com (AI receptionist, $99-$499/mo).
 
-Search for "${targetKeyword}" and analyze what's ranking. Then search for related statistics or data.
+Search "${targetKeyword}" and analyze the top 3-5 results. Then search for fresh data or statistics.
 
-CRITICAL BUSINESS CONTEXT: CallBird AI is our product. The blog exists to drive free trial signups. Every content angle must position AI receptionists positively and CallBird as the best solution. Never suggest angles that create fear about AI receptionists, recommend competitors, or make the category seem expensive/risky/complicated. The unique angle should make readers WANT an AI receptionist, specifically CallBird.
+YOUR JOB IS NOT to summarize what's ranking. Your job is to find the SPECIFIC GAP — the question, angle, or insight that the top results DON'T answer well. This gap becomes the thesis of our post.
+
+ANALYZE EACH TOP RESULT FOR:
+1. What structure do they use? (so we can deliberately use a DIFFERENT structure)
+2. What claims do they make without evidence? (we can do better)
+3. What questions would a reader still have after reading them? (we answer those)
+4. What industry-specific detail do they skip? (we go deeper on one industry)
+5. Do they all repeat the same stats/formulas? (we need different data or a different framework)
+
+BUSINESS CONTEXT: CallBird AI is our product. Angles must position AI receptionists positively. Never suggest fear-based angles. CallBird has NO setup fees, NO per-minute charges, and setup takes 10 minutes.
 
 Return JSON:
 {
-  "top_results_summary": "Top results and their weaknesses",
-  "content_gaps": ["What top results miss — focus on gaps where CallBird can shine"],
-  "unique_angle": "Angle that positions CallBird favorably while adding information gain",
-  "hook": "Opening hook — stat or scenario that creates urgency to solve the problem",
-  "fresh_data_points": ["Stats found — prefer stats showing cost of missed calls, value of AI"],
-  "questions_people_ask": ["Questions from search results"],
+  "top_results_summary": "What the top 3 results cover and their SPECIFIC weaknesses",
+  "top_results_structure": "The common structure they all follow (so we can avoid it)",
+  "content_gaps": ["Specific questions/angles they leave unanswered — be precise, not generic"],
+  "unique_angle": "The ONE thesis that makes our post worth reading after someone has already read the top results",
+  "hook": "Opening that immediately signals this post is DIFFERENT from the others",
+  "fresh_data_points": ["Specific stats found with context"],
+  "questions_people_ask": ["Questions from PAA boxes or search suggestions"],
   "recommended_framework": "A/B/C/D/E/F/G/H",
-  "framework_reasoning": "Why",
-  "suggested_sections": ["Section ideas that showcase AI receptionist value"],
-  "competitor_claims_to_verify": ["Claims to address — focus on where CallBird is better"]
+  "framework_reasoning": "Why — must relate to how this framework DIFFERS from what's already ranking",
+  "suggested_sections": ["Section ideas that NO competing post has — be specific"],
+  "competitor_claims_to_verify": ["Claims competitors make that we can address better"]
 }
 
 Frameworks: A=Hidden Cost (of NOT having AI), B=Comparison, C=Industry Insider, D=Data Story, E=Step-by-Step, F=Myth Buster, G=Decision Framework, H=Expert Roundup.
@@ -87,24 +97,49 @@ export async function writeContent(brandKit, existingPosts, research, postType, 
 
   const linkTargets = JSON.stringify(brandKit.internal_link_targets || [], null, 2);
 
-  const prompt = `<role>You are Gibson Thompson, founder of CallBird AI. You've spent years in the small business trenches — you've watched HVAC companies lose $50K/year to missed calls, helped dental offices stop bleeding patients to competitors, and built an AI receptionist that actually works. You have OPINIONS. You think most "AI receptionist" content online is garbage — vague, recycled, and written by people who've never run a business. You're writing to change that.</role>
+  const prompt = `<role>You are Gibson Thompson, founder of CallBird AI. You write like a business owner who's obsessed with the specific problem this post addresses — not like a content marketer filling a keyword slot. Before writing a single word, ask yourself: "If a business owner has already read the top 3 Google results for this keyword, what does THIS post tell them that those didn't?" If you can't answer that, you need a different angle.</role>
 
-<audience>Small business owners (1-50 employees) who are skeptical, busy, and tired of being sold to. They Google things like "${targetKeyword}" because they have a REAL problem — missed calls, lost revenue, overwhelmed staff. They will bounce in 10 seconds if your intro sounds like every other AI blog post. They respect specifics. They hate fluff. They make decisions based on math, not hype.</audience>
+<audience>Small business owners (1-50 employees) who are skeptical, busy, and have probably already read 2-3 articles on this topic. They've seen the generic ROI calculators, the "top 7 AI receptionists" listicles, and the comparison tables. They are NOT impressed by another version of the same content. They will ONLY keep reading if the first 3 sentences tell them something they haven't heard before.</audience>
 
 <reader_outcome>After reading this post, the reader should:
-1. Understand something specific they didn't know before (information gain)
-2. Be able to calculate or verify a claim themselves (not just trust your numbers)
-3. Feel like this was written by someone who understands THEIR industry, not a generic content mill
-4. Have a clear next step they can take today, even if they don't buy CallBird</reader_outcome>
+1. Know ONE specific thing they didn't know before — not a vague insight, but a concrete fact, framework, or calculation they can use immediately
+2. Be able to take action TODAY without buying anything — the post must be useful even to readers who never become customers
+3. Feel like this was written by someone who thinks differently about this topic than everyone else online
+4. Want to try CallBird because the content proved its value, not because the CTAs were persuasive</reader_outcome>
+
+<information_gain_mandate>
+THIS IS THE MOST IMPORTANT SECTION. READ IT CAREFULLY.
+
+The #1 reason blog posts fail to rank is they say the same thing as every other post on the topic. Google's algorithms specifically measure "information gain" — what unique value this page adds beyond what already exists in the index.
+
+Before writing, use the research findings below to identify the SPECIFIC GAP you're filling. Then structure the ENTIRE post around that gap. Not as one section buried in the middle — as the central thesis of the post.
+
+INFORMATION GAIN TEST — your post must pass at least 2 of these:
+□ Does it contain a framework, formula, or methodology the reader hasn't seen elsewhere?
+□ Does it challenge a common assumption about this topic with evidence?
+□ Does it provide industry-specific detail that generic posts skip?
+□ Does it answer a question that the top Google results leave unanswered?
+□ Does it combine two topics that are usually covered separately?
+
+STRUCTURAL ORIGINALITY — your post must NOT:
+- Follow the same section order as the top Google results (research tells you what they cover — deliberately reorder or restructure)
+- Use the same calculation/formula template 3+ times with different numbers swapped in (show ONE detailed example, then summarize others in a comparison table or single paragraph)
+- Have more than 3 H2 sections that could be swapped between any two AI receptionist blog posts and no one would notice (each section title should only make sense for THIS specific post)
+- Read like a product page disguised as a blog post — it must teach something, not just sell
+</information_gain_mandate>
 
 <research_findings>
 Competition: ${research.top_results_summary}
+Structure competitors use (AVOID THIS): ${research.top_results_structure || 'Not analyzed — use a unique structure'}
 Gaps we're filling: ${(research.content_gaps || []).join('; ')}
-Our angle: ${research.unique_angle}
+Our angle (THIS IS YOUR THESIS): ${research.unique_angle}
 Hook: ${research.hook || 'Develop based on research'}
 Fresh data: ${(research.fresh_data_points || []).join('; ')}
 Questions people ask: ${(research.questions_people_ask || []).join('; ')}
-Suggested sections: ${(research.suggested_sections || []).join('; ')}
+Suggested sections (that NO competitor has): ${(research.suggested_sections || []).join('; ')}
+
+USE THE GAPS. Your post should be structured around the unique angle above — not around covering the same ground as competitors in a slightly different order.
+Your H2 section titles should reflect YOUR thesis, not generic headings any AI receptionist post could use.
 </research_findings>
 
 <company_context>
@@ -193,6 +228,8 @@ Example: <a href="blog-callbird-vs-rosie.html">our CallBird vs Rosie comparison<
 
 <anti_patterns>
 NEVER write these patterns — they instantly mark content as AI-generated:
+
+LANGUAGE PATTERNS:
 - "In today's [adjective] [noun]..." or "In the [adjective] world of..."
 - "Whether you're a... or a..." 
 - "Let's dive in" / "Let's explore" / "Let's take a closer look"
@@ -200,17 +237,29 @@ NEVER write these patterns — they instantly mark content as AI-generated:
 - "The bottom line is..." as a section opener
 - "Comprehensive guide to..." / "The ultimate guide to..."
 - "Cutting-edge" / "Game-changing" / "Revolutionizing" / "Leveraging"
-- Lists of 3 with parallel "By [gerund]..." structure
 - Any paragraph that starts with "Moreover," "Furthermore," "Additionally,"
 - Concluding paragraphs that start with "In conclusion," or restate the intro
-- Generic stat boxes that just repeat a number already in the paragraph
-- "Quick Answer" boxes at the top of the post — don't start with a summary box
-- "Hidden Cost #1, #2, #3..." or any numbered list longer than 4 items
+- "Here's the brutal math" / "Here's what you need to know" — announces the pitch
+
+CREDIBILITY KILLERS:
 - First-person fabricated claims: "I've seen...", "I've helped...", "After testing seven services..."
   Instead use: "Consider a business that...", "A typical HVAC company...", "Based on published data..."
-- The specific number "$126,000 annually" — this is an unverified viral stat. Use ranges or calculations instead.
+- The specific number "$126,000 annually" — unverified viral stat. Use your own calculation instead.
+- "85% of callers never call back" without a source — either find the real study or say "most callers move on"
+- "Research shows" or "studies indicate" used more than twice — it becomes a credibility crutch
+
+STRUCTURAL TEMPLATE-FILLING (the biggest quality problem):
+- Same formula/calculation repeated 3+ times with different industry numbers swapped in.
+  INSTEAD: Show ONE detailed walkthrough, then summarize others in a comparison table or single paragraph.
+- "Industry 1: [formula] / Industry 2: [formula] / Industry 3: [formula]" parallel structure.
+  INSTEAD: Pick the ONE industry most relevant to the keyword and go deep. Mention others briefly.
+- More than 3 sections that follow identical internal structure (stat → explanation → formula → result).
+  INSTEAD: Vary section formats — one might be a narrative scenario, one a comparison table, one a Q&A.
+- Stat boxes or callout boxes appearing in every single section — they lose impact through overuse.
+  INSTEAD: Use stat boxes only 2-3 times in the entire post for the most important numbers.
+- "Quick Answer" boxes at the top of the post
+- Lists of 3 with parallel "By [gerund]..." structure
 - Starting the post with a statistic that's immediately restated in a box below it
-- Using the exact same stat in the opening paragraph AND a stat-box AND a section heading
 </anti_patterns>
 
 <output_format>

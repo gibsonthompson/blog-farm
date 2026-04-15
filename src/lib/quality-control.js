@@ -112,15 +112,16 @@ Verdict rules:
 - REJECT: overall < 5 OR critical brand violations OR competitor recommendations OR multiple hallucinated sources OR post actively drives readers away from CallBird
 
 IMPORTANT SCORING GUIDANCE:
-- information_gain: Score 8+ ONLY if the post contains insights, data, or analysis you would NOT find in the first page of Google results for this keyword. Score 5 or below if it reads like a rewrite of existing content.
+- information_gain: Score 8+ ONLY if the post has a clear thesis or insight that is NOT covered by the top Google results for this keyword. "Another ROI calculator" is a 4. "A method for auditing your actual miss rate that no competitor explains" is an 8. Ask: would someone who already read 3 competitor posts on this topic learn something NEW from this one?
 - aeo_readiness: Score 8+ ONLY if each major section has a clear, extractable answer that an AI engine could cite standalone. Score 5 or below if answers are buried in paragraphs or require surrounding context.
-- content_quality: Score 8+ ONLY if a human expert in this industry would find this genuinely useful. Score 5 or below if it reads like generic AI content with industry terms swapped in.
-- factual_accuracy: Score 5 or below if ANY named organization, institute, or study cannot be verified as real. Common AI fabrications include: "[Industry] Service Institute," "[Topic] Research Foundation," or any organization with a generic "[Adjective] [Noun] Institute" pattern. If you aren't confident an organization exists, FLAG IT in hallucination_flags.
-- YEAR CHECK: The current year is 2026. If the title or content says "2025" as if it's the current year, that's an immediate NEEDS_REVISION.
-- BUSINESS PROTECTION: This is the most important check. If the post recommends ANY competitor over CallBird, suggests users avoid AI receptionists, creates fear about costs/complexity/risks of the product category, or leaves readers thinking "I shouldn't get an AI receptionist" — that is an INSTANT REJECT regardless of all other scores. CallBird's blog exists to drive trial signups, not to scare people away.
-- FABRICATED EXPERIENCE: Flag any first-person claims like "I've seen businesses...", "After helping hundreds of...", "I've tested seven services..." These are AI-generated fake anecdotes. The author's name is Gibson Thompson but these experiences are fabricated. Flag them in issues.
-- MATH VERIFICATION: If the post includes a calculation or formula, verify the math adds up. If the headline says "$126,000" but the formula calculates to $101,750, that's a factual_accuracy failure. Inconsistent statistics (62% in one section, 74% in another for the same claim) should also be flagged.
-- STRUCTURAL VARIETY: If the post uses "Hidden Cost #1, #2, #3, #4, #5" or similar numbered lists with 5+ items, flag as needs_revision. Human experts don't write in rigid numbered sequences — they use narrative flow with descriptive subheadings.
+- content_quality: Score 8+ ONLY if the post teaches something useful to someone who DOESN'T buy CallBird. If the entire value proposition is "buy CallBird," that's a product page, not a blog post. Score 5 or below if the post is just a dressed-up sales pitch.
+- factual_accuracy: Score 5 or below if ANY named organization, institute, or study cannot be verified as real. Flag ALL suspicious sources in hallucination_flags.
+- STRUCTURAL ORIGINALITY: Flag NEEDS_REVISION if the post uses the same calculation template 3+ times with different numbers. Flag if more than 3 H2 sections could be swapped between any AI receptionist blog post and still make sense (they're not specific to THIS topic). Flag if the post follows the exact same structure as a typical competitor page: intro → cost formula → industry examples → comparison table → CTA.
+- YEAR CHECK: 2026 only. 2025 used as current = NEEDS_REVISION.
+- BUSINESS PROTECTION: Competitor recommendations or category fear = INSTANT REJECT.
+- FABRICATED EXPERIENCE: Flag first-person claims like "I've seen..." or "After helping hundreds..." — these are AI hallucinations.
+- MATH VERIFICATION: All calculations must be internally consistent. If headline says X, formula must produce X.
+- TEMPLATE-FILLING: If the same formula appears 3+ times with only the numbers changed (e.g., HVAC example, dental example, legal example all using identical structure), score content_quality 5 or below. One detailed example + a summary table is better than three identical calculations.
 
 Return ONLY the JSON — no markdown fences, no explanation.`
     }],
