@@ -284,14 +284,16 @@ Return TWO blocks:
 
 <content>
 Write the blog post body as clean semantic HTML.
-Use: h1, h2, h3, p, ul, li, strong, a, blockquote.
+Use: h2, h3, p, ul, li, strong, a, blockquote.
+DO NOT include an h1 tag — the template wrapper adds the h1 in the hero section.
+DO NOT include a "Quick Answer" box or summary box at the top.
 Use class="stat-highlight" for important numbers (sparingly — max 3).
 Use class="cta-box" for call-to-action sections (max 2 — one mid-post, one end).
 Use class="faq-section" with class="faq-item" for FAQs at the end.
 Internal links as <a href="blog-slug-here.html">descriptive anchor text</a>.
 Service page links as <a href="https://callbirdai.com/path">anchor text</a>.
 
-DO NOT use class="aeo-answer" boxes. Instead, make your H2 opening paragraphs naturally concise and quotable. An AI engine should be able to extract the first 2 sentences under any H2 as a standalone answer — but it should read like natural writing, not a definition box.
+Make your H2 opening paragraphs naturally concise and quotable — an AI engine should be able to extract the first 2 sentences under any H2 as a standalone answer without needing a special box.
 </content>
 ${notes ? `\n<publisher_notes>${notes}</publisher_notes>` : ''}`;
 
@@ -415,4 +417,69 @@ export async function loadBusinessContext(businessSlug) {
     existingPosts: [...(existingPosts || []), ...(generatedPosts || [])],
     referencePosts: referencePosts || [],
   };
+}
+
+// ─────────────────────────────────────────────────────────
+//  HTML SANITIZER — runs after template generation
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Deterministic post-processing that fixes common generation errors.
+ * Runs AFTER wrapInTemplate, BEFORE validation.
+ * This is more reliable than prompting — code doesn't hallucinate.
+ */
+export function sanitizeGeneratedHtml(html, existingSlugs = []) {
+  let result = html;
+
+  // 1. Remove duplicate H1 tags inside <article> (hero already has one)
+  //    Keep the FIRST h1 (in the hero), remove any inside <article>
+  const articleMatch = result.match(/<article[\s\S]*?<\/article>/i);
+  if (articleMatch) {
+    const articleHtml = articleMatch[0];
+    const cleanedArticle = articleHtml.replace(/<h1[^>]*>[\s\S]*?<\/h1>/gi, '');
+    result = result.replace(articleMatch[0], cleanedArticle);
+  }
+
+  // 2. Remove Quick Answer boxes
+  result = result.replace(/<div[^>]*class="[^"]*quick-answer[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+
+  // 3. Remove .aeo-answer boxes
+  result = result.replace(/<div[^>]*class="[^"]*aeo-answer[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+
+  // 4. Fix broken internal links — replace with # if slug doesn't exist
+  if (existingSlugs.length > 0) {
+    result = result.replace(/href="(blog-[^"]*\.html)"/gi, (match, url) => {
+      const slug = url.replace(/^blog-/, '').replace(/\.html$/, '');
+      if (existingSlugs.includes(slug)) {
+        return match; // valid link, keep it
+      }
+      // Try to find a close match
+      const closeMatch = existingSlugs.find(s =>
+        s.includes(slug.split('-').slice(0, 2).join('-')) ||
+        slug.includes(s.split('-').slice(0, 2).join('-'))
+      );
+      if (closeMatch) {
+        return `href="blog-${closeMatch}.html"`;
+      }
+      // No match found — remove the link but keep the anchor text
+      return 'href="#"';
+    });
+  }
+
+  // 5. Fix "By CallBird Team" → "By Gibson Thompson" anywhere in hero-meta
+  result = result.replace(/By CallBird Team/g, 'By Gibson Thompson');
+  result = result.replace(/"CallBird Team"/g, '"Gibson Thompson"');
+
+  // 6. Fix FAQ structure — ensure faq-question buttons have the icon span
+  result = result.replace(
+    /<button class="faq-question">([^<]*?)(?:<span class="faq-icon">.*?<\/span>)?<\/button>/gi,
+    '<button class="faq-question">$1<span class="faq-icon">+</span></button>'
+  );
+
+  // 7. Strip any CSS class references to removed components
+  result = result.replace(/class="[^"]*(?:quick-answer|aeo-answer|stats-row)[^"]*"/gi, (match) => {
+    return match.replace(/quick-answer|aeo-answer|stats-row/g, '').replace(/\s+/g, ' ').trim();
+  });
+
+  return result;
 }

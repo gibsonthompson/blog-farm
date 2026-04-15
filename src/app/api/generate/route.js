@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { runResearch, writeContent, wrapInTemplate, loadBusinessContext } from '@/lib/claude.js';
+import { runResearch, writeContent, wrapInTemplate, sanitizeGeneratedHtml, loadBusinessContext } from '@/lib/claude.js';
 import { runQualityControl } from '@/lib/quality-control.js';
 import { validateKeywordUniqueness, validatePostUniqueness } from '@/lib/dedup-validator.js';
 import { validatePost } from '@/lib/post-validation.js';
@@ -206,17 +206,22 @@ async function handleTemplate(body, businessSlug) {
 
     // Wrap content in HTML template
     const startTime = Date.now();
-    const { metadata, html } = await wrapInTemplate(
+    const { metadata, html: rawHtml } = await wrapInTemplate(
       post.html_content, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix
     );
     const duration = Date.now() - startTime;
 
-  const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
-
-  // ── PROGRAMMATIC VALIDATION — hard code checks ──
+  // ── LOAD EXISTING SLUGS ──
   const { data: allExisting } = await supabase.from('blog_existing_posts')
     .select('slug').eq('business_id', biz.id);
   const existingSlugs = (allExisting || []).map(p => p.slug);
+
+  // ── DETERMINISTIC SANITIZATION — fix H1s, broken links, Quick Answer boxes ──
+  const html = sanitizeGeneratedHtml(rawHtml, existingSlugs);
+
+  const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
+
+  // ── PROGRAMMATIC VALIDATION — hard code checks ──
 
   const validation = validatePost(html, metadata, existingSlugs);
 
