@@ -125,14 +125,16 @@ async function handleResearch(body, businessSlug) {
   await supabase.from('blog_generation_logs').insert({
     post_id: post.id, step: 'research', status: 'success',
     details: { target_keyword: targetKeyword, framework: research.recommended_framework,
-      unique_angle: research.unique_angle, gaps_found: (research.content_gaps || []).length },
+      unique_angle: research.unique_angle, gaps_found: (research.content_gaps || []).length,
+      verified_stats_count: (research.verified_statistics || []).length },
     duration_ms: duration,
   });
 
   return NextResponse.json({
     success: true, step: 1, postId: post.id,
     research: { framework: research.recommended_framework, angle: research.unique_angle,
-      gaps: (research.content_gaps || []).length, dataPoints: (research.fresh_data_points || []).length },
+      gaps: (research.content_gaps || []).length,
+      verifiedStats: (research.verified_statistics || []).length },
   });
 }
 

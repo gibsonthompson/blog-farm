@@ -103,14 +103,14 @@ export default function Dashboard() {
 
     try {
       // Step 1: Research
-      setGenStep('🔍 Researching topic & analyzing competition...');
+      setGenStep('🔍 Researching topic & finding real statistics...');
       const step1 = await callStep('research', {
         targetKeyword: keyword.trim(), postType, notes: notes.trim(),
       });
       const postId = step1.postId;
 
       // Step 2: Write content
-      setGenStep('✍️ Writing content with research insights...');
+      setGenStep(`✍️ Writing content (${step1.research?.verifiedStats || 0} verified stats found)...`);
       await callStep('write', { postId });
 
       // Step 3: HTML template + validation

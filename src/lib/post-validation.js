@@ -325,6 +325,46 @@ export function validatePost(html, metadata, existingSlugs = []) {
     warnings.push('"Quick Answer" box detected — this is a generic AI pattern. Start with natural prose instead.');
   }
 
+  // 31. Fabricated data sample sizes (AI loves inventing "2,074 businesses" etc.)
+  const sampleSizePatterns = [
+    /(?:analyzing|analyzed|surveyed|studied|reviewed|data from)\s+[\d,]+\s+(?:businesses|companies|firms|practices|implementations|integrations)/gi,
+    /(?:based on|according to)\s+(?:our|my|internal)\s+(?:data|research|analysis|survey)/gi,
+  ];
+  for (const pattern of sampleSizePatterns) {
+    const matches = text.match(pattern);
+    if (matches) {
+      for (const m of matches) {
+        warnings.push(`Likely fabricated data claim: "${m}" — remove specific sample sizes unless from a real, named study`);
+      }
+    }
+  }
+
+  // 32. Excessive precise percentages (>5 unique percentages often means fabrication)
+  const allPercents = text.match(/\d{1,3}(?:\.\d+)?%/g) || [];
+  const uniquePercents2 = [...new Set(allPercents)];
+  if (uniquePercents2.length > 8) {
+    warnings.push(`${uniquePercents2.length} different percentage values found — likely includes fabricated statistics. Verify each one has a real source.`);
+  }
+
+  // 33. Unsourced authoritative claims — stats presented as fact without attribution
+  const unsourcedPatterns = [
+    /(\d{2,3})%\s+of\s+(?:businesses|companies|small businesses|callers|customers)\s+(?:fail|abandon|miss|lose|report)/gi,
+    /(?:studies show|research shows|data shows|industry data shows)\s+(?:that\s+)?(\d{2,3})%/gi,
+  ];
+  for (const pattern of unsourcedPatterns) {
+    const matches = text.match(pattern) || [];
+    // Check if any attribution word is nearby (within 100 chars after the match)
+    for (const m of matches) {
+      const idx = text.indexOf(m);
+      const context = text.substring(idx, Math.min(text.length, idx + m.length + 100)).toLowerCase();
+      const hasAttribution = /(?:according to|per|from|by|source:|hubspot|salesforce|gartner|forrester|bureau|bls|census|google|yelp|harvard|mckinsey)/.test(context);
+      if (!hasAttribution) {
+        warnings.push(`Possibly unsourced stat: "${m.substring(0, 60)}..." — add a real source or soften to qualitative language`);
+        break; // Only flag once per pattern
+      }
+    }
+  }
+
   return {
     valid: errors.length === 0,
     errors,

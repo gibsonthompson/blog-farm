@@ -30,39 +30,48 @@ H — "The Expert Roundup": 5-8 key questions, each answer AEO-optimized.
 export async function runResearch(targetKeyword, postType) {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 2000,
-    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
+    max_tokens: 3000,
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
     messages: [{
       role: 'user',
       content: `You are researching "${targetKeyword}" to write a blog post (${postType}) for callbirdai.com (AI receptionist, $99-$499/mo).
 
-Search "${targetKeyword}" and analyze the top 3-5 results. Then search for fresh data or statistics.
+PERFORM THESE SEARCHES IN ORDER:
+1. Search "${targetKeyword}" — analyze top 3-5 results for structure and gaps
+2. Search for statistics related to the topic (e.g., "missed call statistics small business" or "AI receptionist market data 2026")
+3. Search for a second set of statistics (e.g., "cost of missed calls" or "small business phone answering statistics")
 
-YOUR JOB IS NOT to summarize what's ranking. Your job is to find the SPECIFIC GAP — the question, angle, or insight that the top results DON'T answer well. This gap becomes the thesis of our post.
+YOUR TWO JOBS:
+JOB 1: Find the content gap — what do the top results NOT cover well?
+JOB 2: Find REAL statistics from REAL sources. Every stat you return must include the source name and be something you actually found in search results. Do NOT invent statistics.
 
 ANALYZE EACH TOP RESULT FOR:
 1. What structure do they use? (so we can deliberately use a DIFFERENT structure)
-2. What claims do they make without evidence? (we can do better)
-3. What questions would a reader still have after reading them? (we answer those)
-4. What industry-specific detail do they skip? (we go deeper on one industry)
-5. Do they all repeat the same stats/formulas? (we need different data or a different framework)
+2. What claims do they make without evidence? (we can do better with real sources)
+3. What questions would a reader still have? (we answer those)
+4. What industry-specific detail do they skip?
 
-BUSINESS CONTEXT: CallBird AI is our product. Angles must position AI receptionists positively. Never suggest fear-based angles. CallBird has NO setup fees, NO per-minute charges, and setup takes 10 minutes.
+BUSINESS CONTEXT: CallBird AI is our product. Angles must position AI receptionists positively. CallBird has NO setup fees, NO per-minute charges, setup takes 10 minutes.
 
 Return JSON:
 {
   "top_results_summary": "What the top 3 results cover and their SPECIFIC weaknesses",
   "top_results_structure": "The common structure they all follow (so we can avoid it)",
-  "content_gaps": ["Specific questions/angles they leave unanswered — be precise, not generic"],
+  "content_gaps": ["Specific questions/angles they leave unanswered"],
   "unique_angle": "The ONE thesis that makes our post worth reading after someone has already read the top results",
-  "hook": "Opening that immediately signals this post is DIFFERENT from the others",
-  "fresh_data_points": ["Specific stats found with context"],
+  "hook": "Opening that immediately signals this post is DIFFERENT",
+  "verified_statistics": [
+    {"stat": "the actual statistic", "source": "organization or publication name", "context": "what it means for our topic"},
+    {"stat": "another real stat", "source": "source name", "context": "relevance"}
+  ],
   "questions_people_ask": ["Questions from PAA boxes or search suggestions"],
   "recommended_framework": "A/B/C/D/E/F/G/H",
-  "framework_reasoning": "Why — must relate to how this framework DIFFERS from what's already ranking",
-  "suggested_sections": ["Section ideas that NO competing post has — be specific"],
-  "competitor_claims_to_verify": ["Claims competitors make that we can address better"]
+  "framework_reasoning": "Why this framework DIFFERS from what's ranking",
+  "suggested_sections": ["Section ideas that NO competing post has"],
+  "competitor_claims_to_verify": ["Claims competitors make without evidence"]
 }
+
+CRITICAL: The "verified_statistics" array must ONLY contain stats you actually found in search results. Include the source name for each. If you only found 2 real stats, return 2 — do NOT pad with invented numbers. Empty array is better than fake data.
 
 Frameworks: A=Hidden Cost (of NOT having AI), B=Comparison, C=Industry Insider, D=Data Story, E=Step-by-Step, F=Myth Buster, G=Decision Framework, H=Expert Roundup.
 
@@ -79,7 +88,7 @@ ONLY valid JSON. No fences.`
     return {
       top_results_summary: 'Parsing failed — using training knowledge.',
       content_gaps: [], unique_angle: `Fresh perspective on ${targetKeyword}`,
-      hook: null, fresh_data_points: [], questions_people_ask: [],
+      hook: null, verified_statistics: [], questions_people_ask: [],
       recommended_framework: postType === 'comparison' ? 'B' : postType === 'industry' ? 'C' : 'E',
       framework_reasoning: 'Default', suggested_sections: [], competitor_claims_to_verify: [],
     };
@@ -134,12 +143,16 @@ Structure competitors use (AVOID THIS): ${research.top_results_structure || 'Not
 Gaps we're filling: ${(research.content_gaps || []).join('; ')}
 Our angle (THIS IS YOUR THESIS): ${research.unique_angle}
 Hook: ${research.hook || 'Develop based on research'}
-Fresh data: ${(research.fresh_data_points || []).join('; ')}
 Questions people ask: ${(research.questions_people_ask || []).join('; ')}
 Suggested sections (that NO competitor has): ${(research.suggested_sections || []).join('; ')}
 
-USE THE GAPS. Your post should be structured around the unique angle above — not around covering the same ground as competitors in a slightly different order.
-Your H2 section titles should reflect YOUR thesis, not generic headings any AI receptionist post could use.
+VERIFIED STATISTICS (from actual web search — USE THESE, do not invent your own):
+${(research.verified_statistics || []).map(s => `• ${s.stat} (Source: ${s.source}) — ${s.context}`).join('\n') || 'No verified statistics found. Use qualitative language ("most businesses," "a significant portion") instead of specific numbers.'}
+
+STATISTICS RULE — THIS IS NON-NEGOTIABLE:
+You may ONLY use statistics that appear in the verified list above. If a stat isn't listed above, you CANNOT use it in the post. No exceptions. If you need a number and don't have one, use qualitative language: "most small businesses," "the majority of callers," "a significant portion." NEVER invent a percentage, sample size, or dollar figure. The verified stats above are all you have — use them well, and supplement with your own calculations based on CallBird's real pricing ($99/$249/$499).
+
+Your post should be structured around the unique angle above — not around covering the same ground as competitors.
 </research_findings>
 
 <company_context>
