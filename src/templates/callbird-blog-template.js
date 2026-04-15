@@ -71,7 +71,7 @@ export const CALLBIRD_BLOG_CSS = `
         .stat-label { font-size: 0.85rem; color: var(--text-light); font-weight: 600; margin-top: 0.25rem; }
 
         .cta-box { background: linear-gradient(135deg, var(--primary-color) 0%, #1a2fb8 100%); color: white; padding: 2.5rem; border-radius: 1rem; text-align: center; margin: 2.5rem 0; }
-        .cta-box h3 { font-family: var(--font-primary); font-size: 1.5rem; color: white; margin-bottom: 0.75rem; }
+        .cta-box h2, .cta-box h3, .cta-box h4 { font-family: var(--font-primary); font-size: 1.5rem; color: white !important; margin-bottom: 0.75rem; }
         .cta-box p { color: rgba(255,255,255,0.9); margin-bottom: 1.5rem; font-size: 1.05rem; }
         .cta-box .btn-accent { background: var(--accent-color); color: var(--text-dark); padding: 0.875rem 2rem; border-radius: 0.5rem; text-decoration: none; font-weight: 700; font-size: 1.05rem; display: inline-block; }
         .cta-box .btn-accent:hover { background: #e5a615; color: var(--text-dark); }

@@ -93,7 +93,7 @@ Review the HTML and return a JSON object with this exact structure:
     "no_fake_statistics": <true/false — are statistics presented with appropriate hedging when source is unknown? No hyper-specific unattributed percentages like "73.2%">,
     "author_is_gibson_thompson": <true/false — author byline says "Gibson Thompson" not "CallBird Team" or generic>,
     "correct_year_references": <true/false — all year references use 2026, not 2025 or earlier as if current>,
-    "no_competitor_recommendations": <true/false — CRITICAL: does the post EVER tell readers to use a competitor instead of CallBird? Does it say "only [competitor] offers [feature]" or "choose [competitor] for [use case]"? This is an INSTANT REJECT.>,
+    "no_competitor_recommendations": <true/false — Does the post actively PUSH readers toward competitors? Mentioning competitors by name with honest positioning is FINE in comparison posts and builds trust. What's NOT okay: "Don't use CallBird for [use case], use [competitor] instead" or positioning CallBird as only suitable for one narrow scenario while recommending competitors for everything else. The test: does a reader finish the post thinking CallBird is the best overall choice? If yes, competitor mentions are fine. If the post reads like a sales page for Smith.ai or Dialzara, that's a reject.>,
     "no_category_fear": <true/false — does the post create fear/doubt about AI receptionists as a category? Posts should make readers WANT an AI receptionist, not afraid of hidden costs, complexity, or risks.>,
     "callbird_positioned_favorably": <true/false — does the reader finish wanting to try CallBird? Or do they finish thinking "this is too expensive/complicated/risky"?>,
     "callbird_setup_accurate": <true/false — does the post accurately reflect that CallBird setup takes minutes, not weeks/months? That ROI is immediate from captured calls?>
@@ -108,9 +108,11 @@ Review the HTML and return a JSON object with this exact structure:
 }
 
 Verdict rules:
-- PASS: overall >= 8 AND all critical checks pass (gtm, phone, pricing, no fabrications, no_hallucinated_sources, no_competitor_recommendations, callbird_positioned_favorably)
+- PASS: overall >= 8 AND all critical checks pass (gtm, phone, pricing, no fabrications, no_hallucinated_sources, callbird_positioned_favorably)
 - NEEDS_REVISION: overall 5-7 OR AEO/information gain scores below 7 OR hallucination flags found OR category fear detected
-- REJECT: overall < 5 OR critical brand violations OR competitor recommendations OR multiple hallucinated sources OR post actively drives readers away from CallBird
+- REJECT: overall < 5 OR critical brand violations OR multiple hallucinated sources OR post actively drives readers AWAY from CallBird toward competitors OR category fear that would discourage readers from getting any AI receptionist
+
+NOTE ON COMPETITOR MENTIONS: Comparison posts and decision frameworks SHOULD mention competitors honestly — this builds trust and targets comparison keywords. Only REJECT if the post positions CallBird negatively while promoting competitors, or if a reader would finish the post wanting to buy a competitor product instead of trying CallBird.
 
 IMPORTANT SCORING GUIDANCE:
 - information_gain: Score 8+ ONLY if the post has a clear thesis or insight that is NOT covered by the top Google results for this keyword. "Another ROI calculator" is a 4. "A method for auditing your actual miss rate that no competitor explains" is an 8. Ask: would someone who already read 3 competitor posts on this topic learn something NEW from this one?
