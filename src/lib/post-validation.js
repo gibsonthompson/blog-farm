@@ -273,6 +273,58 @@ export function validatePost(html, metadata, existingSlugs = []) {
     }
   }
 
+  // 26. Fabricated first-person experience claims
+  const fabricatedClaims = [
+    'i\'ve seen businesses',
+    'i\'ve helped companies',
+    'i\'ve watched hundreds',
+    'i\'ve watched dozens',
+    'after helping hundreds',
+    'after working with hundreds',
+    'after testing seven',
+    'after testing dozens',
+    'i\'ve tested every',
+    'i\'ve personally tested',
+    'in my experience working with',
+    'i\'ve implemented ai for',
+    'i\'ve spent years implementing',
+    'i\'ve spent three years',
+  ];
+  for (const claim of fabricatedClaims) {
+    if (textLower.includes(claim)) {
+      warnings.push(`Likely fabricated experience claim: "${claim}" — use hypothetical framing instead ("Consider a business that...")`);
+    }
+  }
+
+  // 27. Numbered list overuse (more than 5 items in sequence = template pattern)
+  const numberedPatterns = [
+    /hidden cost #\d/gi,
+    /step #?\d.*step #?\d.*step #?\d.*step #?\d.*step #?\d/gs,
+    /reason #?\d.*reason #?\d.*reason #?\d.*reason #?\d.*reason #?\d/gs,
+  ];
+  for (const pattern of numberedPatterns) {
+    if (pattern.test(text)) {
+      warnings.push('Long numbered sequence detected (5+) — break into natural prose sections instead');
+    }
+  }
+
+  // 28. Inconsistent statistics (same claim with different numbers)
+  const missedCallStats = text.match(/(\d{2,3})%\s*(?:of\s+)?(?:calls?|phone\s+calls?)\s*(?:go|are|get)\s*(?:un)?(?:answered|missed)/gi) || [];
+  const uniquePercents = [...new Set(missedCallStats.map(m => m.match(/(\d{2,3})%/)?.[1]).filter(Boolean))];
+  if (uniquePercents.length > 1) {
+    warnings.push(`Inconsistent missed call statistics: ${uniquePercents.join('% vs ')}% — pick one number and use it consistently`);
+  }
+
+  // 29. Viral unverified stat reuse
+  if (text.includes('$126,000') || text.includes('126,000 annually')) {
+    warnings.push('Uses the viral "$126,000 annually" stat — this is unverified and overused. Use a specific calculation or range instead.');
+  }
+
+  // 30. Quick Answer box pattern
+  if (htmlLower.includes('quick answer') || htmlLower.includes('quick-answer')) {
+    warnings.push('"Quick Answer" box detected — this is a generic AI pattern. Start with natural prose instead.');
+  }
+
   return {
     valid: errors.length === 0,
     errors,

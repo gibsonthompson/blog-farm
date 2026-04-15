@@ -91,20 +91,25 @@ Review the HTML and return a JSON object with this exact structure:
     "no_hallucinated_sources": <true/false — CRITICAL: are ALL named organizations, institutes, studies real and verifiable? Flag ANY that look invented like "Customer Service Institute" or "Emergency Service Institute">,
     "no_fake_statistics": <true/false — are statistics presented with appropriate hedging when source is unknown? No hyper-specific unattributed percentages like "73.2%">,
     "author_is_gibson_thompson": <true/false — author byline says "Gibson Thompson" not "CallBird Team" or generic>,
-    "correct_year_references": <true/false — all year references use 2026, not 2025 or earlier as if current>
+    "correct_year_references": <true/false — all year references use 2026, not 2025 or earlier as if current>,
+    "no_competitor_recommendations": <true/false — CRITICAL: does the post EVER tell readers to use a competitor instead of CallBird? Does it say "only [competitor] offers [feature]" or "choose [competitor] for [use case]"? This is an INSTANT REJECT.>,
+    "no_category_fear": <true/false — does the post create fear/doubt about AI receptionists as a category? Posts should make readers WANT an AI receptionist, not afraid of hidden costs, complexity, or risks.>,
+    "callbird_positioned_favorably": <true/false — does the reader finish wanting to try CallBird? Or do they finish thinking "this is too expensive/complicated/risky"?>,
+    "callbird_setup_accurate": <true/false — does the post accurately reflect that CallBird setup takes minutes, not weeks/months? That ROI is immediate from captured calls?>
   },
   "issues": ["list of specific issues found"],
   "suggestions": ["list of improvement suggestions"],
   "hallucination_flags": ["list any organization names, study names, or statistics that appear fabricated — be specific"],
+  "business_protection_flags": ["list any statements that recommend competitors over CallBird, create fear about AI receptionists, or position CallBird unfavorably"],
   "information_gain_assessment": "1-2 sentences on what unique value this post adds vs typical competitor content",
   "aeo_assessment": "1-2 sentences on how well-structured this is for AI engine citation",
   "verdict": "PASS" | "NEEDS_REVISION" | "REJECT"
 }
 
 Verdict rules:
-- PASS: overall >= 8 AND all critical checks pass (gtm, phone, pricing, no fabrications, no_hallucinated_sources, no_fake_statistics, answer_first_structure)
-- NEEDS_REVISION: overall 5-7 OR AEO/information gain scores below 7 OR hallucination flags found
-- REJECT: overall < 5 OR critical brand violations OR information_gain score below 4 OR multiple hallucinated sources
+- PASS: overall >= 8 AND all critical checks pass (gtm, phone, pricing, no fabrications, no_hallucinated_sources, no_competitor_recommendations, callbird_positioned_favorably)
+- NEEDS_REVISION: overall 5-7 OR AEO/information gain scores below 7 OR hallucination flags found OR category fear detected
+- REJECT: overall < 5 OR critical brand violations OR competitor recommendations OR multiple hallucinated sources OR post actively drives readers away from CallBird
 
 IMPORTANT SCORING GUIDANCE:
 - information_gain: Score 8+ ONLY if the post contains insights, data, or analysis you would NOT find in the first page of Google results for this keyword. Score 5 or below if it reads like a rewrite of existing content.
@@ -112,6 +117,10 @@ IMPORTANT SCORING GUIDANCE:
 - content_quality: Score 8+ ONLY if a human expert in this industry would find this genuinely useful. Score 5 or below if it reads like generic AI content with industry terms swapped in.
 - factual_accuracy: Score 5 or below if ANY named organization, institute, or study cannot be verified as real. Common AI fabrications include: "[Industry] Service Institute," "[Topic] Research Foundation," or any organization with a generic "[Adjective] [Noun] Institute" pattern. If you aren't confident an organization exists, FLAG IT in hallucination_flags.
 - YEAR CHECK: The current year is 2026. If the title or content says "2025" as if it's the current year, that's an immediate NEEDS_REVISION.
+- BUSINESS PROTECTION: This is the most important check. If the post recommends ANY competitor over CallBird, suggests users avoid AI receptionists, creates fear about costs/complexity/risks of the product category, or leaves readers thinking "I shouldn't get an AI receptionist" — that is an INSTANT REJECT regardless of all other scores. CallBird's blog exists to drive trial signups, not to scare people away.
+- FABRICATED EXPERIENCE: Flag any first-person claims like "I've seen businesses...", "After helping hundreds of...", "I've tested seven services..." These are AI-generated fake anecdotes. The author's name is Gibson Thompson but these experiences are fabricated. Flag them in issues.
+- MATH VERIFICATION: If the post includes a calculation or formula, verify the math adds up. If the headline says "$126,000" but the formula calculates to $101,750, that's a factual_accuracy failure. Inconsistent statistics (62% in one section, 74% in another for the same claim) should also be flagged.
+- STRUCTURAL VARIETY: If the post uses "Hidden Cost #1, #2, #3, #4, #5" or similar numbered lists with 5+ items, flag as needs_revision. Human experts don't write in rigid numbered sequences — they use narrative flow with descriptive subheadings.
 
 Return ONLY the JSON — no markdown fences, no explanation.`
     }],
