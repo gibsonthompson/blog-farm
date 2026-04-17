@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
-import { dailyPerformanceSnapshot, analyzeWinningPatterns, detectCannibalization } from '@/lib/performance.js';
+import {
+  dailyPerformanceSnapshot, analyzeWinningPatterns, detectCannibalization,
+  discoverContentGaps, analyzeUnderperformers,
+} from '@/lib/performance.js';
 import supabase from '@/lib/supabase.js';
 
 export const maxDuration = 120;
@@ -63,6 +66,8 @@ export async function POST(request) {
       case 'snapshot': return NextResponse.json({ success: true, ...await dailyPerformanceSnapshot(biz.id) });
       case 'patterns': return NextResponse.json({ success: true, ...await analyzeWinningPatterns(biz.id) });
       case 'cannibalization': return NextResponse.json({ success: true, ...await detectCannibalization(biz.id) });
+      case 'gaps': return NextResponse.json({ success: true, ...await discoverContentGaps(biz.id) });
+      case 'underperformers': return NextResponse.json({ success: true, ...await analyzeUnderperformers(biz.id) });
       default: return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
   } catch (err) {

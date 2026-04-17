@@ -185,7 +185,7 @@ export function classifyPost(post, current, previous = null) {
   const daysOld = post.publish_date
     ? Math.floor((Date.now() - new Date(post.publish_date).getTime()) / 86400000) : 999;
 
-  if (daysOld < 14) return { tier: 'new', reason: `${daysOld} days old` };
+  if (daysOld <= 14) return { tier: 'new', reason: `${daysOld} days old` };
 
   if (!current || current.impressions === 0) {
     return daysOld > 7
@@ -245,7 +245,19 @@ export async function dailyPerformanceSnapshot(businessId) {
   const today = fmtDate(new Date());
 
   // Current period: 3-31 days ago (28 days, avoiding 48-72h delay)
-  const current = buildPerfMap(await fetchPagePerformanceRange(siteUrl, 3, 31));
+  const currentRows = await fetchPagePerformanceRange(siteUrl, 3, 31);
+
+  // EDGE CASE: If GSC returns 0 rows, could be an API outage — not real data.
+  // Check if we had data yesterday. If yes, skip this snapshot to avoid false "unindexed" labels.
+  if (currentRows.length === 0) {
+    const { data: yesterday } = await supabase.from('blog_post_performance')
+      .select('id').lt('snapshot_date', today).limit(1).single();
+    if (yesterday) {
+      return { snapshots: 0, message: 'GSC returned 0 rows but previous data exists — possible API outage. Snapshot skipped.', skipped: true };
+    }
+  }
+
+  const current = buildPerfMap(currentRows);
 
   // Previous period: 32-59 days ago (non-overlapping 28 days for trend comparison)
   // Day 31 is the boundary — current includes it, previous starts at day 32
@@ -262,7 +274,13 @@ export async function dailyPerformanceSnapshot(businessId) {
   let queryCallCount = 0;
   const MAX_QUERY_CALLS = 20; // Limit per-query API calls per run
 
-  for (const post of posts) {
+  // Sort posts by current impressions descending — highest-value posts get query data first
+  const sortedPosts = posts.map(post => ({
+    post,
+    impressions: matchPerf(current, post)?.impressions || 0,
+  })).sort((a, b) => b.impressions - a.impressions).map(x => x.post);
+
+  for (const post of sortedPosts) {
     const cur = matchPerf(current, post);
     const prev = matchPerf(previous, post);
 
@@ -305,11 +323,31 @@ export async function dailyPerformanceSnapshot(businessId) {
   }
 
   const tiers = t => snapshots.filter(s => s.performance_tier === t).length;
+
+  // DATA RETENTION: Clean up snapshots older than 90 days to prevent table bloat
+  try {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
+    await supabase.from('blog_post_performance')
+      .delete().lt('snapshot_date', fmtDate(cutoff));
+  } catch { /* non-critical */ }
+
+  // MARCH 2026 CORE UPDATE: "Weakest link" mechanism — dead/unindexed posts drag down domain authority
+  const deadCount = snapshots.filter(s => s.performance_tier === 'dead').length;
+  const unindexedOld = snapshots.filter(s =>
+    s.performance_tier === 'unindexed' && posts.find(p => p.id === s.post_id)?.publish_date &&
+    (Date.now() - new Date(posts.find(p => p.id === s.post_id).publish_date).getTime()) / 86400000 > 60
+  ).length;
+
+  const warnings = [];
+  if (deadCount > 0) warnings.push(`${deadCount} dead post(s) may be dragging down domain authority (March 2026 "weakest link" effect). Consider consolidating or unpublishing.`);
+  if (unindexedOld > 3) warnings.push(`${unindexedOld} posts published 60+ days ago still not indexed. Check for thin content, missing sitemaps, or noindex tags.`);
+
   return {
     snapshots: snapshots.length,
     summary: { winner: tiers('winner'), rising: tiers('rising'), underperformer: tiers('underperformer'),
       declining: tiers('declining'), unindexed: tiers('unindexed'), dead: tiers('dead'), new: tiers('new') },
     tierChanges,
+    warnings,
   };
 }
 
@@ -355,28 +393,56 @@ export async function analyzeWinningPatterns(businessId) {
     avg_loser_words: avg(losers.map(a => a.word_count)),
     avg_winner_links: avg(winners.map(a => a.internal_link_count)),
     avg_loser_links: avg(losers.map(a => a.internal_link_count)),
+    avg_winner_ext_links: avg(winners.map(a => a.external_link_count || 0)),
+    avg_loser_ext_links: avg(losers.map(a => a.external_link_count || 0)),
     winner_table_pct: pct(winners, a => a.has_comparison_table),
     loser_table_pct: pct(losers, a => a.has_comparison_table),
     winner_scenario_pct: pct(winners, a => a.has_before_after),
     winner_faq_pct: pct(winners, a => a.has_faq),
+    winner_kw_in_title_pct: pct(winners, a => a.primary_keyword_in_title),
+    loser_kw_in_title_pct: pct(losers, a => a.primary_keyword_in_title),
+    winner_question_headings: avg(winners.map(a => a.question_heading_count || 0)),
+    avg_winner_images: avg(winners.map(a => a.image_count || 0)),
     winner_types: countBy(winners, 'post_type'),
     winner_frameworks: countBy(winners, 'framework_used'),
     winner_openings: countBy(winners, 'opening_type'),
+    winner_title_formats: countBy(winners, 'title_format'),
+    avg_winner_title_len: avg(winners.map(a => a.title_length || 0)),
     avg_winner_qc: avg(winners.map(a => a.qc_overall).filter(Boolean)),
     avg_loser_qc: avg(losers.map(a => a.qc_overall).filter(Boolean)),
     recommendations: [],
   };
 
-  // Generate recommendations
+  // Generate recommendations from pattern deltas
   if (patterns.winner_table_pct > patterns.loser_table_pct + 20)
     patterns.recommendations.push(`Comparison tables: ${patterns.winner_table_pct}% winners vs ${patterns.loser_table_pct}% losers`);
   if (patterns.avg_winner_links > patterns.avg_loser_links + 1)
     patterns.recommendations.push(`Internal links: winners avg ${patterns.avg_winner_links} vs losers ${patterns.avg_loser_links}`);
+  if (patterns.avg_winner_ext_links > patterns.avg_loser_ext_links + 1)
+    patterns.recommendations.push(`External citations: winners avg ${patterns.avg_winner_ext_links} vs losers ${patterns.avg_loser_ext_links}`);
   if (patterns.avg_winner_words > patterns.avg_loser_words + 300)
     patterns.recommendations.push(`Word count: winners avg ${patterns.avg_winner_words} vs losers ${patterns.avg_loser_words}`);
+  if (patterns.winner_kw_in_title_pct > patterns.loser_kw_in_title_pct + 20)
+    patterns.recommendations.push(`Keyword in title: ${patterns.winner_kw_in_title_pct}% winners vs ${patterns.loser_kw_in_title_pct}% losers`);
+  if (patterns.winner_question_headings > 1)
+    patterns.recommendations.push(`Winners avg ${patterns.winner_question_headings} question-phrased headings (PAA alignment)`);
+
   const bestType = Object.entries(patterns.winner_types).sort((a,b) => b[1]-a[1])[0];
   if (bestType) patterns.recommendations.push(`Best post type: "${bestType[0]}"`);
+  const bestTitle = Object.entries(patterns.winner_title_formats || {}).sort((a,b) => b[1]-a[1])[0];
+  if (bestTitle) patterns.recommendations.push(`Best title format: "${bestTitle[0]}"`);
+  const bestOpening = Object.entries(patterns.winner_openings).sort((a,b) => b[1]-a[1])[0];
+  if (bestOpening) patterns.recommendations.push(`Best opening: "${bestOpening[0]}"`);
 
+  // Content gap insights (what queries show impressions but have no dedicated post)
+  try {
+    const gapData = await discoverContentGaps(businessId);
+    if (gapData.gaps?.length > 0) {
+      patterns.content_gaps = gapData.gaps.slice(0, 5).map(g => ({
+        query: g.query, impressions: g.impressions, position: g.position,
+      }));
+    }
+  } catch { /* non-critical */ }
   await supabase.from('blog_winning_patterns').upsert({
     business_id: businessId, patterns, sample_size: winners.length + losers.length, updated_at: new Date().toISOString(),
   }, { onConflict: 'business_id' });
@@ -389,46 +455,146 @@ export async function getWinningPatternsForPrompt(businessId) {
   const { data } = await supabase.from('blog_winning_patterns')
     .select('patterns, updated_at, sample_size').eq('business_id', businessId).single();
   if (!data || data.sample_size < 6) return null;
+
+  // EDGE CASE #10: If patterns are 30+ days old, they might be misleading
+  const patternsAge = Math.floor((Date.now() - new Date(data.updated_at).getTime()) / 86400000);
+  if (patternsAge > 30) {
+    return `⚠️ CONTENT INTELLIGENCE DATA IS ${patternsAge} DAYS OLD — run weekly pattern analysis to refresh.\nUsing stale insights cautiously.`;
+  }
+
   const p = data.patterns;
   const lines = [
-    `CONTENT INTELLIGENCE (GSC data, ${data.updated_at}):`,
-    `Based on ${data.sample_size} published posts:`,
-    '', 'WINNING POST TRAITS:',
+    `CONTENT INTELLIGENCE (GSC data, updated ${data.updated_at.split('T')[0]}):`,
+    `Based on ${data.sample_size} published posts with real performance data:`,
+    '', 'YOUR BEST-PERFORMING POSTS share these traits:',
     ...p.recommendations.map(r => `• ${r}`),
-    '', `Avg winner: ${p.avg_winner_words} words, ${p.avg_winner_links} internal links`,
-    '', 'LOSING POST TRAITS:',
-    `• Avg ${p.avg_loser_words} words, ${p.avg_loser_links} internal links`,
+    '', `Avg winner: ${p.avg_winner_words} words, ${p.avg_winner_links} internal links, ${p.avg_winner_ext_links || 0} external citations`,
+    `Avg winner title: ${p.avg_winner_title_len || 50} characters`,
   ];
-  if (p.loser_table_pct < 20) lines.push('• Usually lack comparison tables');
+
+  if (p.avg_loser_words) {
+    lines.push('', 'YOUR WORST-PERFORMING POSTS tend to:');
+    lines.push(`• Average only ${p.avg_loser_words} words and ${p.avg_loser_links} internal links`);
+    if (p.loser_table_pct < 20) lines.push('• Usually lack comparison tables');
+    if (p.loser_kw_in_title_pct < 50) lines.push('• Often missing primary keyword in title');
+  }
+
+  // Content gap opportunities
+  if (p.content_gaps?.length > 0) {
+    lines.push('', 'CONTENT OPPORTUNITIES (high-impression queries without dedicated posts):');
+    for (const gap of p.content_gaps) {
+      lines.push(`• "${gap.query}" — ${gap.impressions} impressions, position ${gap.position}`);
+    }
+  }
+
   return lines.join('\n');
 }
 
 // ─── CONTENT ATTRIBUTE EXTRACTION ───────────────────────
 
-/** Extract trackable attributes from generated HTML. Call after step 3. */
+/**
+ * Extract trackable attributes from generated HTML.
+ * Based on 2026 ranking factor research:
+ * - Keyword placement (title, H1, first 100 words) — strongest on-page signal
+ * - Internal + external links — authority distribution and trust
+ * - Schema types — rich result eligibility and AI Overview citation
+ * - Multi-modal signals — images, tables, structured elements
+ * - Content structure — headings, FAQ, ToC, question headings
+ * - Title/meta optimization — CTR drivers
+ */
 export function extractContentAttributes(html, metadata, qcResult) {
   const text = stripHtml(html);
+  const htmlLower = html.toLowerCase();
+  const keyword = (metadata?.primary_keyword || '').toLowerCase();
+  const first100Words = text.split(/\s+/).slice(0, 100).join(' ').toLowerCase();
+  const title = (metadata?.title || '');
+
+  // EDGE CASE #4: Word-level keyword matching, not substring.
+  // "ai receptionist" should match "Best AI Receptionist for Dentists" but also
+  // "Top AI-Powered Receptionist Solutions" where words aren't adjacent.
+  const keywordWords = keyword.split(/\s+/).filter(w => w.length > 2);
+  const titleLower = title.toLowerCase();
+  const keywordInTitle = keywordWords.length > 0 && keywordWords.every(w => titleLower.includes(w));
+  const keywordInFirst100 = keywordWords.length > 0 && keywordWords.every(w => first100Words.includes(w));
+
+  // Count question-phrased headings (correlates with PAA/AI Overview citation)
+  const headings = html.match(/<h[23][^>]*>[^<]+<\/h[23]>/gi) || [];
+  const questionHeadings = headings.filter(h => /\?/.test(stripHtml(h)));
+
+  // EDGE CASE #6: Only count images inside <article>, not nav/footer logos
+  const articleMatch = html.match(/<article[\s\S]*?<\/article>/i);
+  const articleHtml = articleMatch ? articleMatch[0] : html;
+  const articleImages = (articleHtml.match(/<img[\s>]/gi) || []).length;
+
   return {
+    // ── Core metrics ──
     word_count: text.split(/\s+/).filter(w => w.length > 0).length,
     h2_count: (html.match(/<h2[\s>]/gi)||[]).length,
     h3_count: (html.match(/<h3[\s>]/gi)||[]).length,
+
+    // ── Keyword placement (strongest on-page signals) ──
+    primary_keyword_in_title: keywordInTitle,
+    primary_keyword_in_first_100: keywordInFirst100,
+
+    // ── Link signals ──
     internal_link_count: (html.match(/href="blog-[^"]*\.html"/gi)||[]).length,
+    // EDGE CASE #5: Exclude all callbirdai.com subdomains from external count
+    external_link_count: (html.match(/href="https?:\/\/(?!([^"]*\.)?callbirdai\.com)[^"]+"/gi)||[]).length,
+
+    // ── Structural elements ──
     has_comparison_table: /<table|table-wrap/i.test(html),
-    has_before_after: /before[\s\S]{0,50}after|without[\s\S]{0,50}with ai|scenario/i.test(text),
-    has_faq: /faq-section|faqpage/i.test(html),
-    has_calculator: /calculator|calculate|formula/i.test(text),
+    has_before_after: /before[\s\S]{0,50}after|without[\s\S]{0,50}with ai|real scenario/i.test(text),
+    has_faq: /faq-section|faqpage/i.test(htmlLower),
+    has_calculator: /calculator|calculate your|formula|framework/i.test(text),
+    has_toc: /table-of-contents|table of contents|jump to section/i.test(htmlLower),
+    image_count: articleImages,  // Only content images, not nav/footer
+    question_heading_count: questionHeadings.length,
+
+    // ── Schema signals (rich results + AI Overview eligibility) ──
+    has_schema_faq: htmlLower.includes('"faqpage"'),
+    has_schema_article: /blogposting|article/i.test(htmlLower) && htmlLower.includes('schema.org'),
+
+    // ── Title/meta optimization (CTR drivers) ──
+    title_length: title.length,
+    title_includes_year: /202[5-9]/.test(title),
+    title_includes_number: /\d/.test(title),
+    title_format: classifyTitleFormat(title),
+    meta_description_length: (metadata?.meta_description || '').length,
+
+    // ── Content quality signals ──
     stat_count: (text.match(/\d+%|\$[\d,]+/g)||[]).length,
     cta_count: (html.match(/cta-box/gi)||[]).length,
+    avg_paragraph_length: getAvgParagraphLength(html),
+
+    // ── Classification ──
     post_type: metadata?.category || 'unknown',
     keyword_intent: classifyIntent(metadata?.primary_keyword),
     opening_type: classifyOpening(text),
     framework_used: metadata?.framework_used || 'unknown',
-    title_includes_year: /202[5-9]/.test(metadata?.title||''),
-    title_includes_number: /\d/.test(metadata?.title||''),
+
+    // ── QC scores (updated in step 4) ──
     qc_overall: qcResult?.scores?.overall || null,
     qc_info_gain: qcResult?.scores?.information_gain || null,
     qc_aeo: qcResult?.scores?.aeo_readiness || null,
   };
+}
+
+function classifyTitleFormat(title) {
+  const t = title.toLowerCase();
+  if (/^how /i.test(t)) return 'how-to';
+  if (/^\d+\s/.test(title) || /top \d/i.test(t)) return 'listicle';
+  if (/vs\.?|versus|compared/i.test(t)) return 'comparison';
+  if (/\?$/.test(title.trim())) return 'question';
+  if (/best |top /i.test(t)) return 'best-of';
+  if (/cost|price|pricing/i.test(t)) return 'cost-analysis';
+  return 'statement';
+}
+
+function getAvgParagraphLength(html) {
+  const paras = html.match(/<p[^>]*>[^<]{20,}<\/p>/gi) || [];
+  if (paras.length === 0) return 0;
+  const totalWords = paras.reduce((sum, p) => sum + stripHtml(p).split(/\s+/).length, 0);
+  return Math.round(totalWords / paras.length);
 }
 
 function classifyIntent(kw) {
@@ -444,6 +610,7 @@ function classifyOpening(text) {
   if (/you're |you are |picture this|imagine |consider a/.test(f)) return 'scenario';
   if (/\d+%|\$[\d,]+/.test(f)) return 'statistic';
   if (/\?/.test(f.split('.')[0])) return 'question';
+  if (/most |every |the problem|the truth|here's what/.test(f)) return 'contrast';
   return 'statement';
 }
 
@@ -474,6 +641,134 @@ export async function detectCannibalization(businessId) {
   return { alertsCreated: created, totalConflicts: Object.keys(conflicts).length };
 }
 
+// ─── QUERY DISCOVERY (content gaps from GSC) ────────────
+
+/**
+ * Find high-impression queries that don't have a dedicated blog post.
+ * These are content opportunities — topics people search for that we don't cover.
+ * Feeds into content strategist recommendations.
+ */
+export async function discoverContentGaps(businessId) {
+  const { data: biz } = await supabase.from('blog_businesses').select('*').eq('id', businessId).single();
+  if (!biz) throw new Error('Business not found');
+  const siteUrl = biz.gsc_property_url || `https://${biz.domain}/`;
+
+  // Get all queries across all blog posts
+  const sc = getSC();
+  const endDate = new Date(); endDate.setDate(endDate.getDate() - 3);
+  const startDate = new Date(endDate); startDate.setDate(startDate.getDate() - 28);
+
+  let allQueries;
+  try {
+    const res = await sc.searchanalytics.query({
+      siteUrl, requestBody: {
+        startDate: fmtDate(startDate), endDate: fmtDate(endDate),
+        dimensions: ['query'],
+        dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'contains', expression: '/blog-' }] }],
+        rowLimit: 1000, type: 'web',
+      },
+    });
+    allQueries = (res.data.rows || []).map(r => ({
+      query: r.keys[0], clicks: r.clicks, impressions: r.impressions,
+      ctr: round(r.ctr * 100, 2), position: round(r.position, 1),
+    }));
+  } catch (err) { console.error('[GSC] Gap discovery failed:', err.message); return { gaps: [] }; }
+
+  // Get existing post keywords
+  const { data: posts } = await supabase.from('blog_existing_posts')
+    .select('title, slug, primary_keyword').eq('business_id', biz.id);
+  const existingKeywords = (posts || []).map(p => (p.primary_keyword || p.title || '').toLowerCase());
+  const existingSlugs = (posts || []).map(p => p.slug.toLowerCase());
+
+  // Find queries with high impressions that don't match any existing post
+  const gaps = allQueries
+    .filter(q => q.impressions >= 20 && q.position > 5) // Showing up but not dominating
+    .filter(q => {
+      const qLower = q.query.toLowerCase();
+      // EDGE CASE #9: Filter junk queries
+      if (qLower.length < 5) return false; // Skip "ok", "yes", "pricing" etc.
+      if (/^(ok|yes|no|pricing|test|hello)$/i.test(qLower)) return false;
+      if (qLower.includes('callbird')) return false; // Skip brand queries
+      // Skip if we have a post targeting this keyword
+      return !existingKeywords.some(kw => kw.includes(qLower) || qLower.includes(kw))
+        && !existingSlugs.some(s => qLower.split(' ').every(w => s.includes(w)));
+    })
+    .sort((a, b) => b.impressions - a.impressions)
+    .slice(0, 15);
+
+  return { gaps };
+}
+
+// ─── UNDERPERFORMER ANALYSIS ────────────────────────────
+
+/**
+ * For posts classified as "underperformer" (good position, bad CTR),
+ * analyze WHY the CTR is low and suggest specific fixes.
+ */
+export async function analyzeUnderperformers(businessId) {
+  const today = fmtDate(new Date());
+  const { data: underperformers } = await supabase.from('blog_post_performance')
+    .select('post_id, clicks_28d, impressions_28d, ctr_28d, position_28d, top_queries, tier_reason')
+    .eq('performance_tier', 'underperformer').eq('snapshot_date', today);
+
+  if (!underperformers?.length) return { posts: [], suggestions: [] };
+
+  const results = [];
+  for (const u of underperformers) {
+    const { data: post } = await supabase.from('blog_existing_posts')
+      .select('title, slug, meta_description, primary_keyword, publish_date')
+      .eq('id', u.post_id).single();
+    if (!post) continue;
+
+    const issues = [];
+    const suggestions = [];
+
+    // Title analysis
+    if (post.title.length > 60) issues.push(`Title too long (${post.title.length} chars) — gets truncated in SERP`);
+    if (post.title.length < 30) issues.push(`Title too short (${post.title.length} chars) — not compelling enough`);
+    if (!/\d/.test(post.title)) suggestions.push('Add a number or year to the title (numbers increase CTR by 20-30%)');
+    if (!/[:\-—|]/.test(post.title)) suggestions.push('Add a power word after a separator (e.g., "... — The Complete Guide")');
+    if (post.title === post.title.toUpperCase() || /^[A-Z][a-z]+ [A-Z][a-z]+/.test(post.title)) {
+      issues.push('Title appears to be in Title Case from slug — rewrite to be compelling');
+    }
+
+    // Meta description analysis
+    const metaLen = (post.meta_description || '').length;
+    if (metaLen === 0) issues.push('No meta description — Google will auto-generate one (usually poorly)');
+    else if (metaLen < 100) issues.push(`Meta description too short (${metaLen} chars) — aim for 140-155`);
+    else if (metaLen > 160) issues.push(`Meta description too long (${metaLen} chars) — gets truncated`);
+
+    // Freshness
+    if (post.publish_date) {
+      const age = Math.floor((Date.now() - new Date(post.publish_date).getTime()) / 86400000);
+      if (age > 90 && !/2026/.test(post.title)) suggestions.push('Add "[2026]" to title for freshness signal');
+    }
+
+    // Top query analysis — are we ranking for the right queries?
+    const topQueries = u.top_queries || [];
+    if (topQueries.length > 0) {
+      const bestQuery = topQueries.sort((a, b) => b.impressions - a.impressions)[0];
+      if (post.primary_keyword && !bestQuery.query.includes(post.primary_keyword?.toLowerCase())) {
+        suggestions.push(`Top query "${bestQuery.query}" doesn't match targeted keyword — consider retargeting title`);
+      }
+    }
+
+    results.push({
+      post_id: u.post_id,
+      title: post.title,
+      slug: post.slug,
+      position: u.position_28d,
+      ctr: u.ctr_28d,
+      impressions: u.impressions_28d,
+      issues,
+      suggestions,
+      topQueries: topQueries.slice(0, 5),
+    });
+  }
+
+  return { posts: results };
+}
+
 // ─── HELPERS ────────────────────────────────────────────
 
 // GSC dates are in Pacific Time (UTC-7/8). Using toLocaleDateString with PT timezone
@@ -481,7 +776,8 @@ export async function detectCannibalization(businessId) {
 function fmtDate(d) { return d.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }); }
 function round(n, dec=0) { return Math.round(n * 10**dec) / 10**dec; }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-function avg(arr) { return arr.length ? round(arr.reduce((a,b) => a+b, 0) / arr.length) : 0; }
+// Null-safe avg: filters out null/undefined/NaN before averaging
+function avg(arr) { const clean = arr.filter(v => v != null && !isNaN(v)); return clean.length ? round(clean.reduce((a,b) => a+b, 0) / clean.length) : 0; }
 function pct(arr, fn) { return arr.length ? round(arr.filter(fn||Boolean).length / arr.length * 100) : 0; }
 function countBy(arr, key) { const c = {}; arr.forEach(a => { const v = a[key]||'unknown'; c[v] = (c[v]||0)+1; }); return c; }
 

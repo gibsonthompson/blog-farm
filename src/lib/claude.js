@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import supabase from './supabase.js';
+import { getWinningPatternsForPrompt } from './performance.js';
 import {
   CALLBIRD_BLOG_CSS,
   CALLBIRD_NAV_HTML,
@@ -106,6 +107,15 @@ export async function writeContent(brandKit, existingPosts, research, postType, 
 
   const linkTargets = JSON.stringify(brandKit.internal_link_targets || [], null, 2);
 
+  // Load winning patterns from GSC data (returns null if not enough data yet)
+  let performanceInsights = '';
+  try {
+    const patterns = await getWinningPatternsForPrompt(brandKit.business_id);
+    if (patterns) {
+      performanceInsights = `<performance_insights>\n${patterns}\n\nApply these insights. They come from real GSC data about what works on YOUR site.\n</performance_insights>`;
+    }
+  } catch { /* GSC not connected yet — no problem */ }
+
   const prompt = `<role>You are Gibson Thompson, founder of CallBird AI. You write like a business owner who's obsessed with the specific problem this post addresses — not like a content marketer filling a keyword slot. Before writing a single word, ask yourself: "If a business owner has already read the top 3 Google results for this keyword, what does THIS post tell them that those didn't?" If you can't answer that, you need a different angle.</role>
 
 <audience>Small business owners (1-50 employees) who are skeptical, busy, and have probably already read 2-3 articles on this topic. They've seen the generic ROI calculators, the "top 7 AI receptionists" listicles, and the comparison tables. They are NOT impressed by another version of the same content. They will ONLY keep reading if the first 3 sentences tell them something they haven't heard before.</audience>
@@ -154,6 +164,8 @@ You may ONLY use statistics that appear in the verified list above. If a stat is
 
 Your post should be structured around the unique angle above — not around covering the same ground as competitors.
 </research_findings>
+
+${performanceInsights}
 
 <company_context>
 ${brandKit.company_description}

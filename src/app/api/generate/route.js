@@ -260,6 +260,16 @@ async function handleTemplate(body, businessSlug) {
     updated_at: new Date().toISOString(),
   }).eq('id', postId);
 
+  // ── TRACK CONTENT ATTRIBUTES for performance pattern analysis ──
+  try {
+    const { extractContentAttributes } = await import('@/lib/performance.js');
+    const attrs = extractContentAttributes(html, metadata, null); // QC scores added in step 4
+    attrs.post_id = postId;
+    await supabase.from('blog_post_attributes').upsert(attrs, { onConflict: 'post_id' });
+  } catch (attrErr) {
+    console.warn('[blog-farm] Attribute tracking failed (non-blocking):', attrErr.message);
+  }
+
   // Post-generation dedup check
   const postCheck = await validatePostUniqueness(biz.id, metadata.title, metadata.primary_keyword, metadata.slug);
   if (!postCheck.unique) {
@@ -307,6 +317,16 @@ async function handleQC(body, businessSlug) {
     if (!brandKit) return NextResponse.json({ error: 'Brand kit not found' }, { status: 404 });
 
     const qcResult = await runQualityControl(postId, biz, brandKit);
+
+    // ── UPDATE CONTENT ATTRIBUTES with QC scores ──
+    try {
+      await supabase.from('blog_post_attributes').upsert({
+        post_id: postId,
+        qc_overall: qcResult.scores?.overall || null,
+        qc_info_gain: qcResult.scores?.information_gain || null,
+        qc_aeo: qcResult.scores?.aeo_readiness || null,
+      }, { onConflict: 'post_id' });
+    } catch { /* non-blocking */ }
 
     const { data: post } = await supabase
       .from('blog_generated_posts').select('title, slug, status, word_count').eq('id', postId).single();
