@@ -406,101 +406,111 @@ function parseNum(s) {
 
 function verifyMath(text) {
   const errors = [];
+  const verifiedResults = new Set(); // Track results already validated by multi-factor
 
-  // Pattern 1: "A × B × C = $RESULT" or "A x B x C = $RESULT"
-  // Matches: "30 × 25% × $500 = $3,750" or "50 calls × 0.25 × $600 = $7,500"
+  // Pattern 1: "A × B × C = $RESULT" — three-factor chains (check first, highest priority)
   const multiplyChains = text.matchAll(
-    /([\d,.]+)(?:%|\s*(?:calls?|mins?|hours?))?[\s]*[×x*][\s]*([\d,.]+)(?:%)?[\s]*[×x*][\s]*\$?([\d,.]+)[\s]*=[\s]*\$?([\d,.]+)/gi
+    /([\d,.]+)(?:%|\s*(?:calls?|mins?|hours?))?\s*×\s*([\d,.]+)(?:%)?\s*×\s*\$?([\d,.]+)\s*=\s*\$?([\d,.]+)/gi
   );
   for (const m of multiplyChains) {
     let a = parseNum(m[1]);
     let b = parseNum(m[2]);
     let c = parseNum(m[3]);
     const stated = parseNum(m[4]);
-    // Handle percentages (if original had %, divide by 100)
     if (m[0].includes('%')) {
       if (a > 1 && a <= 100 && m[0].indexOf('%') < m[0].indexOf('×')) a = a / 100;
       else if (b > 1 && b <= 100) b = b / 100;
     }
     const calculated = a * b * c;
     if (!isNaN(calculated) && !isNaN(stated) && stated > 0) {
-      const diff = Math.abs(calculated - stated) / stated;
-      if (diff > 0.05) { // More than 5% off
-        errors.push(`Math error: ${m[1]} × ${m[2]} × ${m[3]} should equal ${calculated.toLocaleString()}, not ${m[4]} (${(diff * 100).toFixed(0)}% off)`);
-      }
-    }
-  }
-
-  // Pattern 2: "$X/week × 52 = $Y" or "$X weekly × 52 weeks = $Y"
-  const weeklyAnnual = text.matchAll(
-    /\$?([\d,.]+)(?:\/week|[\s]+(?:per|a|each)\s+week|[\s]+weekly)[\s\S]{0,30}?(?:52|×\s*52|x\s*52)[\s\S]{0,20}?=?\s*\$?([\d,.]+)/gi
-  );
-  for (const m of weeklyAnnual) {
-    const weekly = parseNum(m[1]);
-    const stated = parseNum(m[2]);
-    const calculated = weekly * 52;
-    if (!isNaN(calculated) && !isNaN(stated) && stated > 0) {
+      verifiedResults.add(stated); // Mark this result as handled
       const diff = Math.abs(calculated - stated) / stated;
       if (diff > 0.05) {
-        errors.push(`Weekly-to-annual math error: $${m[1]}/week × 52 = $${calculated.toLocaleString()}, not $${m[2]} (${(diff * 100).toFixed(0)}% off)`);
+        errors.push(`Math error: ${m[1]} × ${m[2]} × ${m[3]} should equal ${Math.round(calculated).toLocaleString()}, not ${m[4]} (${(diff * 100).toFixed(0)}% off)`);
       }
     }
   }
 
-  // Pattern 3: "$X/month × 12 = $Y"
+  // Also check for 4-factor patterns like "(12 × 4) × $10,140 × 0.25 = $121,680"
+  const fourFactor = text.matchAll(
+    /\(?([\d,.]+)\s*×\s*([\d,.]+)\)?\s*×\s*\$?([\d,.]+)\s*×\s*\$?([\d,.]+)(?:%)?\s*=\s*\$?([\d,.]+)/gi
+  );
+  for (const m of fourFactor) {
+    let a = parseNum(m[1]);
+    let b = parseNum(m[2]);
+    let c = parseNum(m[3]);
+    let d = parseNum(m[4]);
+    const stated = parseNum(m[5]);
+    if (m[0].includes('%') && d > 0 && d <= 1) { /* already decimal */ }
+    else if (m[0].includes('%') && d > 1 && d <= 100) d = d / 100;
+    const calculated = a * b * c * d;
+    if (!isNaN(calculated) && !isNaN(stated) && stated > 0) {
+      verifiedResults.add(stated);
+      const diff = Math.abs(calculated - stated) / stated;
+      if (diff > 0.05) {
+        errors.push(`Math error: ${m[1]} × ${m[2]} × ${m[3]} × ${m[4]} should equal ${Math.round(calculated).toLocaleString()}, not ${m[5]} (${(diff * 100).toFixed(0)}% off)`);
+      }
+    }
+  }
+
+  // Pattern 2: "$X/month × 12 = $Y" — ONLY match explicit "× 12" near monthly price
   const monthlyAnnual = text.matchAll(
-    /\$?([\d,.]+)(?:\/month|[\s]+(?:per|a|each)\s+month|[\s]+monthly)[\s\S]{0,30}?(?:12|×\s*12|x\s*12)[\s\S]{0,20}?=?\s*\$?([\d,.]+)/gi
+    /\$?([\d,.]+)\/month\s*[×x*]\s*12\s*=\s*\$?([\d,.]+)/gi
   );
   for (const m of monthlyAnnual) {
     const monthly = parseNum(m[1]);
     const stated = parseNum(m[2]);
+    if (verifiedResults.has(stated)) continue; // Already checked
     const calculated = monthly * 12;
     if (!isNaN(calculated) && !isNaN(stated) && stated > 0) {
+      verifiedResults.add(stated);
       const diff = Math.abs(calculated - stated) / stated;
       if (diff > 0.05) {
-        errors.push(`Monthly-to-annual math error: $${m[1]}/month × 12 = $${calculated.toLocaleString()}, not $${m[2]} (${(diff * 100).toFixed(0)}% off)`);
+        errors.push(`Monthly-to-annual math error: $${m[1]}/month × 12 = $${Math.round(calculated).toLocaleString()}, not $${m[2]} (${(diff * 100).toFixed(0)}% off)`);
       }
     }
   }
 
-  // Pattern 4: Simple "A × B = $RESULT" two-factor multiplication
+  // Pattern 3: "$X/week × 52 = $Y" — ONLY match explicit "× 52"
+  const weeklyAnnual = text.matchAll(
+    /\$?([\d,.]+)(?:\/week|[\s]+per[\s]+week)\s*[×x*]\s*52\s*=\s*\$?([\d,.]+)/gi
+  );
+  for (const m of weeklyAnnual) {
+    const weekly = parseNum(m[1]);
+    const stated = parseNum(m[2]);
+    if (verifiedResults.has(stated)) continue;
+    const calculated = weekly * 52;
+    if (!isNaN(calculated) && !isNaN(stated) && stated > 0) {
+      verifiedResults.add(stated);
+      const diff = Math.abs(calculated - stated) / stated;
+      if (diff > 0.05) {
+        errors.push(`Weekly-to-annual math error: $${m[1]}/week × 52 = $${Math.round(calculated).toLocaleString()}, not $${m[2]} (${(diff * 100).toFixed(0)}% off)`);
+      }
+    }
+  }
+
+  // Pattern 4: Simple "A × B = $RESULT" — ONLY if result wasn't already verified
+  // AND not part of a larger multi-factor expression
   const twoFactor = text.matchAll(
-    /([\d,.]+)(?:%|\s*(?:calls?|jobs?|appointments?))?[\s]*[×x*][\s]*\$?([\d,.]+)[\s]*=[\s]*\$?([\d,.]+)/gi
+    /([\d,.]+)(?:%|\s*(?:calls?|jobs?|appointments?))?[\s]*×[\s]*\$?([\d,.]+)[\s]*=[\s]*\$?([\d,.]+)/gi
   );
   for (const m of twoFactor) {
+    const stated = parseNum(m[3]);
+    if (verifiedResults.has(stated)) continue; // Already validated by a multi-factor pattern
+
+    // Skip if there's a × or ) before this match (it's part of a larger formula)
+    const charBefore = m.index > 0 ? text.substring(Math.max(0, m.index - 5), m.index) : '';
+    if (/[×x\*\)]/.test(charBefore)) continue;
+
     let a = parseNum(m[1]);
     let b = parseNum(m[2]);
-    const stated = parseNum(m[3]);
     if (m[0].includes('%') && a > 1 && a <= 100) a = a / 100;
     const calculated = a * b;
     if (!isNaN(calculated) && !isNaN(stated) && stated > 0) {
+      verifiedResults.add(stated);
       const diff = Math.abs(calculated - stated) / stated;
       if (diff > 0.05) {
-        errors.push(`Math error: ${m[1]} × ${m[2]} should equal ${calculated.toLocaleString()}, not ${m[3]} (${(diff * 100).toFixed(0)}% off)`);
-      }
-    }
-  }
-
-  // Pattern 5: Claimed annual loss doesn't match the math nearby
-  // Look for "loses $X annually" near a calculation
-  const annualClaims = text.matchAll(
-    /(?:loses?|losing|costs?|costing)[\s]+\$?([\d,.]+)[\s]+(?:annually|per year|a year|each year)/gi
-  );
-  for (const m of annualClaims) {
-    const claimed = parseNum(m[1]);
-    if (isNaN(claimed) || claimed < 1000) continue;
-    // Look for a weekly figure within 500 chars before
-    const idx = m.index;
-    const context = text.substring(Math.max(0, idx - 500), idx);
-    const weeklyMatch = context.match(/\$?([\d,.]+)[\s]*(?:\/week|per week|weekly|each week)/i);
-    if (weeklyMatch) {
-      const weekly = parseNum(weeklyMatch[1]);
-      const expectedAnnual = weekly * 52;
-      if (!isNaN(expectedAnnual) && expectedAnnual > 0) {
-        const diff = Math.abs(expectedAnnual - claimed) / claimed;
-        if (diff > 0.15) { // 15% tolerance for rounding
-          errors.push(`Annual claim mismatch: $${weeklyMatch[1]}/week × 52 = $${expectedAnnual.toLocaleString()}, but post claims $${m[1]} annually (${(diff * 100).toFixed(0)}% off)`);
-        }
+        errors.push(`Math error: ${m[1]} × ${m[2]} should equal ${Math.round(calculated).toLocaleString()}, not ${m[3]} (${(diff * 100).toFixed(0)}% off)`);
       }
     }
   }
