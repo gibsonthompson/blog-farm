@@ -314,14 +314,27 @@ Make your H2 opening paragraphs naturally concise and quotable — an AI engine 
 </content>
 
 <self_review>
-BEFORE outputting your final response, mentally review the entire post against these questions:
-1. Would a reader who Googled "${targetKeyword}" learn something they couldn't find on the first page of results? If not, your angle isn't unique enough.
-2. Does any sentence undermine CallBird's value proposition? (e.g., calling ROI "fiction," suggesting setup is complex, creating doubt about AI receptionists)
-3. Have you invented any statistics, sample sizes, data sets, or organization names? Remove them.
-4. Have you described CallBird doing things not in the company context? (e.g., integrating with software not listed, performing professional tasks like diagnosis or legal checks) Remove them.
-5. Does the math check out? If you show a formula, does the result match the claim?
-6. Would Gibson Thompson — a real business owner — actually write this sentence? If it sounds like a content marketer, rewrite it.
-7. Are you using the same formula/template 3+ times with different numbers? Show one detailed example and summarize the rest.
+BEFORE outputting your final response, mentally review the entire post against these questions. If ANY check fails, fix it before outputting.
+
+STATISTICS CHECK (most important):
+1. Go through every percentage, dollar figure, and numeric claim in the post. For each one, ask: "Did this number come from the VERIFIED STATISTICS section above?" If not, either remove it, replace it with a verified stat, or rewrite using qualitative language ("most," "the majority," "roughly half").
+2. If you wrote "X% of businesses..." or "studies show X%..." — is that exact number in the verified list? If not, DELETE IT and rewrite without the number.
+3. Calculations using CallBird's real pricing ($99/$249/$499) and simple arithmetic are fine — those don't need external sources. But claims about industry benchmarks, conversion rates, or market statistics MUST come from verified_statistics.
+
+MATH CHECK:
+4. For every formula or calculation: does the math actually produce the stated result? Multiply it out. If you claim "$X per year" and show a weekly number, does weekly × 52 = your annual claim?
+
+BUSINESS CHECK:
+5. Does any sentence undermine CallBird's value proposition?
+6. Have you described CallBird features not in the company context?
+
+INTERNAL LINKING CHECK:
+7. Count your internal links to other blog posts. You MUST have at least 3. Check each one against the existing posts list — every href must use a real slug. If you have fewer than 3, add more by finding natural places to reference related guides, comparisons, or industry posts from the list.
+
+QUALITY CHECK:
+8. Would a reader who Googled "${targetKeyword}" learn something they couldn't find on the first page of results?
+9. Are you using the same formula/template 3+ times with different numbers? Fix it.
+10. Is any "person in [City]" anecdote presented as a real story? Change to hypothetical framing.
 </self_review>
 ${notes ? `\n<publisher_notes>${notes}</publisher_notes>` : ''}`;
 

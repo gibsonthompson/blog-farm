@@ -223,12 +223,14 @@ export function validatePost(html, metadata, existingSlugs = []) {
 
   // 20. CTA present
   if (!html.includes('cta-box') && !html.includes('Start Free Trial') && !html.includes('start.html')) {
-    warnings.push('No CTA detected — post should drive trial signups');
+    errors.push('No CTA detected — every post must drive trial signups');
   }
 
-  // 21. Internal link count
+  // 21. Internal link count — critical for SEO and site architecture
   const internalLinkCount = internalLinks.length;
-  if (internalLinkCount < 2) warnings.push(`Only ${internalLinkCount} internal links — target 3+`);
+  if (internalLinkCount === 0) errors.push('Zero internal links — must have at least 3 links to other blog posts');
+  else if (internalLinkCount < 2) errors.push(`Only ${internalLinkCount} internal link — must have at least 2`);
+  else if (internalLinkCount < 3) warnings.push(`Only ${internalLinkCount} internal links — target 3+`);
 
   // 22. Nav and footer present
   if (!html.includes('class="navbar"') && !html.includes('class="nav')) {

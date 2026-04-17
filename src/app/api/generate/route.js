@@ -87,19 +87,19 @@ async function handleResearch(body, businessSlug) {
     .select('id, title, status').eq('business_id', biz.id).eq('slug', baseSlug);
 
   if (existingRecords?.length) {
-    // Clean up failed [Generating] records
-    const stale = existingRecords.filter(r => r.title.includes('[Generating]'));
-    if (stale.length) {
-      const staleIds = stale.map(r => r.id);
-      await supabase.from('blog_generation_logs').delete().in('post_id', staleIds);
-      await supabase.from('blog_generated_posts').delete().in('id', staleIds);
-    }
-    // Block if a real (non-stale) post exists with this slug
-    const real = existingRecords.filter(r => !r.title.includes('[Generating]'));
-    if (real.length) {
+    // Only block if the post is published or approved (actively in use)
+    const live = existingRecords.filter(r => ['published', 'approved'].includes(r.status));
+    if (live.length) {
       return NextResponse.json({
-        error: `A post with slug "${baseSlug}" already exists: "${real[0].title}" (${real[0].status}). Use a different keyword angle.`,
+        error: `A post with slug "${baseSlug}" already exists: "${live[0].title}" (${live[0].status}). Use a different keyword angle.`,
       }, { status: 409 });
+    }
+
+    // Clean up everything else (failed attempts, revisions, stale generating records)
+    const deadIds = existingRecords.filter(r => !['published', 'approved'].includes(r.status)).map(r => r.id);
+    if (deadIds.length) {
+      await supabase.from('blog_generation_logs').delete().in('post_id', deadIds);
+      await supabase.from('blog_generated_posts').delete().in('id', deadIds);
     }
   }
 
