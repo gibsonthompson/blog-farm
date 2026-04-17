@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { recommendNextPosts } from '@/lib/content-strategist.js';
-import { loadBusinessContext, researchTopic, writeContent, wrapInTemplate, sanitizeGeneratedHtml } from '@/lib/claude.js';
+import { loadBusinessContext, runResearch, writeContent, wrapInTemplate, sanitizeGeneratedHtml } from '@/lib/claude.js';
 import { runQualityControl } from '@/lib/quality-control.js';
 import { validatePost } from '@/lib/post-validation.js';
 import { validatePostUniqueness } from '@/lib/dedup-validator.js';
@@ -84,14 +84,10 @@ export async function GET(request) {
     // ── STEP 1: Research ──
     let research;
     try {
-      const { brandKit, existingPosts } = await loadBusinessContext(businessSlug);
-      research = await researchTopic(targetKeyword, postType, existingPosts, brandKit);
+      research = await runResearch(targetKeyword, postType);
 
-      if (!research || research.skip) {
-        log.result = 'skipped_duplicate';
-        log.steps.push({ step: 'research', status: 'skipped', reason: research?.skipReason || 'duplicate topic' });
-        if (queued) await supabase.from('blog_content_queue').update({ status: 'skipped' }).eq('id', queued.id);
-        return NextResponse.json({ success: true, ...log });
+      if (!research) {
+        throw new Error('Research returned empty');
       }
 
       log.steps.push({ step: 'research', status: 'success', stats_found: research.verified_statistics?.length || 0 });
