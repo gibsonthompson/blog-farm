@@ -67,7 +67,7 @@ export async function GET(request) {
     try {
       // Dedup check
       const dedup = await validateKeywordUniqueness(biz.id, targetKeyword, postType);
-      if (!dedup.unique) {
+      if (!dedup.safe) {
         log.result = 'duplicate_topic';
         log.steps.push({ step: 'research', status: 'skipped', reason: dedup.reason });
         return NextResponse.json({ success: true, ...log });
