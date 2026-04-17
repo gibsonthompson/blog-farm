@@ -320,11 +320,15 @@ export async function dailyPerformanceSnapshot(businessId) {
  * Call weekly after 10+ published posts with 30+ days of data.
  */
 export async function analyzeWinningPatterns(businessId) {
-  const { data: perfData } = await supabase.rpc('latest_performance_per_post', { biz_id: businessId })
-    .catch(() => ({ data: null }));
+  // Try RPC first, fall back to direct query (RPC may not exist yet)
+  let perf = null;
+  try {
+    const { data } = await supabase.rpc('latest_performance_per_post', { biz_id: businessId });
+    perf = data;
+  } catch {
+    // RPC doesn't exist — fall back to direct query
+  }
 
-  // Fallback if RPC doesn't exist yet
-  let perf = perfData;
   if (!perf) {
     const today = fmtDate(new Date());
     const { data } = await supabase.from('blog_post_performance')
