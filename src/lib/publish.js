@@ -166,7 +166,7 @@ export async function publishPost(postId) {
     }).eq('id', postId);
 
     // 6. Also add to existing posts registry
-    await supabase.from('blog_existing_posts').insert({
+    await supabase.from('blog_existing_posts').upsert({
       business_id: biz.id,
       url: blogUrl,
       title: post.title,
@@ -177,7 +177,7 @@ export async function publishPost(postId) {
       category: post.category,
       publish_date: today,
       word_count: post.word_count,
-    }).onConflict('business_id, slug').merge();
+    }, { onConflict: 'business_id,slug', ignoreDuplicates: false });
 
     results.steps.push({ step: 'database_update', status: 'success' });
 
