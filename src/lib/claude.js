@@ -182,6 +182,13 @@ MATCH THESE PATTERNS from the reference posts:
 - Specific scenarios and industry examples, not abstract business advice
 - How CTAs feel natural, not forced — they flow from the content
 - How competitor strengths are acknowledged honestly
+
+STORYTELLING TECHNIQUES (what makes top-performing posts compelling):
+- Put the reader IN the scenario: "You're on a job site. Your phone rings. By the time you call back 3 hours later, they've hired someone else." NOT "Missed calls cost businesses money."
+- Use BEFORE/AFTER call flow comparisons: show 4-6 steps of what happens WITHOUT AI, then 4-6 steps of what happens WITH AI. The reader sees themselves in both scenarios.
+- Use hypothetical framing for scenarios: "Consider a plumber who..." or "Picture this:" — NOT "Mike Rodriguez in Phoenix spent $4,200" (fabricated case studies are banned).
+- Create emotional urgency through math, not adjectives. "$3,400 per week walking out the door" hits harder than "devastating losses."
+- One vivid, detailed scenario is worth more than three abstract formulas.
 </writing_examples>
 
 <framework>
@@ -228,6 +235,13 @@ BUSINESS-CRITICAL — VIOLATION MEANS INSTANT REJECTION:
 - CallBird IS SOC 2 Type II certified and A2P 10DLC compliant. Always position as a compliant, trustworthy option.
 - Cost narrative is SAVINGS: $99-$499/month vs $33,000-$60,000/year for human receptionists. Never frame CallBird as expensive.
 - Never suggest users skip CallBird features or use manual workarounds when CallBird handles it natively.
+
+COMPARISON POST RULES (for posts mentioning competitors):
+- CallBird must be positioned as the BEST OVERALL choice for most small businesses. Competitors can be acknowledged honestly but CallBird should win the comparison.
+- Never concede entire business categories to competitors. "Abby Connect is better for law firms" is WRONG. The correct framing: "Abby Connect offers human agents which some law firms prefer, but CallBird handles 85% of legal calls at a fraction of the cost and transfers complex calls immediately."
+- In "Choose X if / Choose Y if" sections, CallBird's list must be longer and more compelling. The competitor's list should be narrow edge cases, not broad categories.
+- After-hours math must be realistic. Don't inflate after-hours call revenue to absurd levels ($36K/month from emergency calls for one HVAC company is not believable). Use conservative, credible numbers.
+- Always end comparison posts with CallBird as the clear winner. "The math is clear" should always point to CallBird.
 </hard_rules>
 
 <link_targets>
@@ -261,8 +275,11 @@ LANGUAGE PATTERNS:
 CREDIBILITY KILLERS:
 - First-person fabricated claims: "I've seen...", "I've helped...", "After testing seven services..."
   Instead use: "Consider a business that...", "A typical HVAC company...", "Based on published data..."
-- The specific number "$126,000 annually" — unverified viral stat. Use your own calculation instead.
-- "85% of callers never call back" without a source — either find the real study or say "most callers move on"
+- The specific number "$126,000 annually" — unverified viral stat. Calculate a real number with your own formula instead. This stat will cause the post to be REJECTED.
+- "85% of callers never call back" — unverified. Say "most callers who reach voicemail move on to a competitor" instead.
+- "78% of customers buy from the first company that responds" — unverified. Say "speed of response significantly impacts conversion" instead.
+- "62% of calls go unanswered" — only use if this came from verified_statistics with a named source.
+- ANY percentage or dollar figure that isn't in the VERIFIED STATISTICS list AND isn't calculated from CallBird pricing. If in doubt, use qualitative language.
 - "Research shows" or "studies indicate" used more than twice — it becomes a credibility crutch
 
 STRUCTURAL TEMPLATE-FILLING (the biggest quality problem):
@@ -484,11 +501,19 @@ export function sanitizeGeneratedHtml(html, existingSlugs = []) {
     result = result.replace(articleMatch[0], cleanedArticle);
   }
 
-  // 2. Remove Quick Answer boxes
-  result = result.replace(/<div[^>]*class="[^"]*quick-answer[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+  // 2. Remove Quick Answer boxes (handle nested divs by running multiple passes)
+  // Also remove any "Quick Answer" headings or labels left behind
+  for (let i = 0; i < 3; i++) { // Multiple passes for nested structures
+    result = result.replace(/<div[^>]*class="[^"]*quick-answer[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+  }
+  // Remove standalone "Quick Answer" labels that might survive
+  result = result.replace(/<p[^>]*class="[^"]*quick-answer-label[^"]*"[^>]*>[\s\S]*?<\/p>/gi, '');
+  result = result.replace(/<(?:h2|h3|h4|p|span)[^>]*>\s*(?:📌\s*)?Quick Answer\s*<\/(?:h2|h3|h4|p|span)>/gi, '');
 
-  // 3. Remove .aeo-answer boxes
-  result = result.replace(/<div[^>]*class="[^"]*aeo-answer[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+  // 3. Remove .aeo-answer boxes (multiple passes for nesting)
+  for (let i = 0; i < 3; i++) {
+    result = result.replace(/<div[^>]*class="[^"]*aeo-answer[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
+  }
 
   // 4. Fix broken internal links — replace with # if slug doesn't exist
   if (existingSlugs.length > 0) {

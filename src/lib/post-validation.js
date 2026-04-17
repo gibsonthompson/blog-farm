@@ -247,11 +247,17 @@ export function validatePost(html, metadata, existingSlugs = []) {
   if (genericH2Count >= 2) warnings.push('Multiple generic H2 headings detected — content may lack uniqueness');
 
   // 24. Competitor recommendation check (deterministic)
+  // These patterns catch ACTIVE recommendations, not comparison framework headers
+  // "Choose Abby Connect if:" in a comparison section is OK
+  // "You should choose Abby Connect" or "We recommend Abby" is NOT OK
   const competitorRecs = [
-    'choose smith', 'choose ruby', 'choose dialzara', 'choose abby', 'choose nexa',
-    'recommend smith', 'recommend ruby', 'go with smith', 'go with ruby',
-    'use smith.ai', 'use ruby', 'use dialzara', 'use abby connect',
-    'only smith', 'only ruby', 'only abby',
+    'recommend smith', 'recommend ruby', 'recommend dialzara', 'recommend abby', 'recommend nexa', 'recommend goodcall',
+    'go with smith', 'go with ruby', 'go with dialzara', 'go with abby', 'go with goodcall',
+    'use smith.ai instead', 'use ruby instead', 'use dialzara instead', 'use abby instead',
+    'better off with smith', 'better off with ruby', 'better off with abby',
+    'only smith.ai offers', 'only ruby offers', 'only abby offers', 'only goodcall offers',
+    'smith.ai is better', 'ruby is better', 'abby is better', 'goodcall is better',
+    'switch to smith', 'switch to ruby', 'switch to abby',
   ];
   for (const rec of competitorRecs) {
     if (textLower.includes(rec)) {
@@ -317,9 +323,9 @@ export function validatePost(html, metadata, existingSlugs = []) {
     warnings.push(`Inconsistent missed call statistics: ${uniquePercents.join('% vs ')}% — pick one number and use it consistently`);
   }
 
-  // 29. Viral unverified stat reuse
-  if (text.includes('$126,000') || text.includes('126,000 annually')) {
-    warnings.push('Uses the viral "$126,000 annually" stat — this is unverified and overused. Use a specific calculation or range instead.');
+  // 29. Viral unverified stat reuse — BLOCKS PUBLISHING
+  if (text.includes('$126,000') || text.includes('126,000 annually') || text.includes('$126K') || text.includes('$126k')) {
+    errors.push('Uses the viral "$126,000 annually" stat — this is unverified and overused. Calculate a real number using your own formula instead.');
   }
 
   // 30. Quick Answer box pattern

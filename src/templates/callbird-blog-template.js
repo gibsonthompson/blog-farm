@@ -48,13 +48,7 @@ export const CALLBIRD_BLOG_CSS = `
         .article-container a { color: var(--primary-color); text-decoration: underline; }
         .article-container a:hover { color: var(--primary-hover); }
 
-        .quick-answer { background: linear-gradient(135deg, rgba(18,32,146,0.06) 0%, rgba(18,32,146,0.02) 100%); border-left: 4px solid var(--primary-color); border-radius: 0 0.75rem 0.75rem 0; padding: 1.5rem 1.75rem; margin: 0 0 2rem; }
-        .quick-answer-label { font-family: var(--font-primary); font-weight: 700; font-size: 0.85rem; color: var(--primary-color); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
-        .quick-answer p { color: var(--text-dark); margin-bottom: 0.5rem; font-size: 1rem; }
-        .quick-answer p:last-child { margin-bottom: 0; }
-
-        .aeo-answer { background: var(--bg-light); border-radius: 0.5rem; padding: 1rem 1.25rem; margin-bottom: 1.25rem; border: 1px solid var(--border-color); }
-        .aeo-answer p { color: var(--text-dark); font-weight: 500; margin-bottom: 0; font-size: 1rem; }
+        /* quick-answer and aeo-answer styles removed — these patterns are deprecated */
 
         .table-wrap { overflow-x: auto; margin: 1.5rem 0 2rem; border-radius: 0.75rem; border: 1px solid var(--border-color); }
         .table-wrap table { width: 100%; border-collapse: collapse; min-width: 600px; font-size: 0.95rem; }
@@ -63,7 +57,8 @@ export const CALLBIRD_BLOG_CSS = `
         .table-wrap td { padding: 0.85rem 0.75rem; border-bottom: 1px solid var(--border-color); color: var(--text-medium); }
         .table-wrap tbody tr:hover { background: rgba(18,32,146,0.03); }
         .table-wrap .hl { background: rgba(18,32,146,0.08); font-weight: 600; color: var(--text-dark); }
-        .table-wrap thead .hl { background: var(--primary-color); }
+        .table-wrap thead .hl { background: var(--primary-color); color: white !important; }
+        .table-wrap td a[href^="tel"] { color: var(--primary-color); font-weight: 600; text-decoration: none; }
 
         .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1.5rem; margin: 2rem 0; }
         .stat-box { text-align: center; padding: 1.25rem; background: var(--bg-light); border-radius: 0.75rem; }
@@ -75,7 +70,8 @@ export const CALLBIRD_BLOG_CSS = `
         .cta-box p { color: rgba(255,255,255,0.9); margin-bottom: 1.5rem; font-size: 1.05rem; }
         .cta-box .btn-accent { background: var(--accent-color); color: var(--text-dark); padding: 0.875rem 2rem; border-radius: 0.5rem; text-decoration: none; font-weight: 700; font-size: 1.05rem; display: inline-block; }
         .cta-box .btn-accent:hover { background: #e5a615; color: var(--text-dark); }
-        .cta-sub { font-size: 0.9rem; color: rgba(255,255,255,0.7); margin-top: 0.75rem; }
+        .cta-box a[href^="tel"], .cta-box a:not(.btn-accent) { color: white !important; text-decoration: underline; }
+        .cta-sub { font-size: 0.9rem; color: rgba(255,255,255,0.7) !important; margin-top: 0.75rem; }
 
         .callout { background: rgba(246,184,40,0.1); border-left: 4px solid var(--accent-color); padding: 1.25rem 1.5rem; border-radius: 0 0.5rem 0.5rem 0; margin: 1.5rem 0; }
         .callout p { color: var(--text-dark); margin-bottom: 0.25rem; font-size: 0.95rem; }
