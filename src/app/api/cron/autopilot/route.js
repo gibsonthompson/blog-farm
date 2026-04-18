@@ -45,21 +45,16 @@ export async function GET(request) {
       .from('blog_businesses').select('*').eq('slug', businessSlug).single();
     if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
-    // Check for a post that finished Phase 1 (has real content but hasn't been templated/published)
-    const { data: drafts } = await supabase
+    // Check for a post that finished Phase 1 (word_count updated = content written)
+    const { data: draft } = await supabase
       .from('blog_generated_posts')
       .select('*')
       .eq('business_id', biz.id)
       .eq('status', 'pending')
+      .gt('word_count', 100)
       .order('created_at', { ascending: true })
-      .limit(10);
-
-    // Find the first one with real content that hasn't been templated yet
-    const draft = (drafts || []).find(d => 
-      d.html_content && 
-      d.html_content.length > 1000 && 
-      d.title?.startsWith('[Generating]')
-    );
+      .limit(1)
+      .maybeSingle();
 
     if (draft) {
       log.steps.push({ step: 'phase', value: 2, postId: draft.id, title: draft.title });
@@ -161,10 +156,10 @@ async function runPhase1(biz, businessSlug, log, startTime) {
 
     if (!contentOutput || contentOutput.length < 500) throw new Error('Content too short');
 
-    // Save content — stays as "pending" with [Generating] title
-    // Phase 2 will detect it by checking for real content
+    // Save content — word_count > 0 signals to Phase 2 that this post is ready
     await supabase.from('blog_generated_posts').update({
       html_content: contentOutput,
+      word_count: contentOutput.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length,
       updated_at: new Date().toISOString(),
     }).eq('id', postId);
 
