@@ -45,15 +45,18 @@ export async function GET(request) {
       .from('blog_businesses').select('*').eq('slug', businessSlug).single();
     if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
-    // Check for a draft that needs Phase 2
-    const { data: draft } = await supabase
+    // Check for a post that finished Phase 1 (has real content but title still shows [Generating])
+    const { data: drafts } = await supabase
       .from('blog_generated_posts')
       .select('*')
       .eq('business_id', biz.id)
-      .eq('status', 'draft')
+      .eq('status', 'pending')
+      .like('title', '[Generating]%')
       .order('created_at', { ascending: true })
-      .limit(1)
-      .single();
+      .limit(5);
+
+    // Find the first one with real content (not placeholder)
+    const draft = (drafts || []).find(d => d.html_content && d.html_content.length > 1000);
 
     if (draft) {
       log.steps.push({ step: 'phase', value: 2, postId: draft.id, title: draft.title });
@@ -155,10 +158,10 @@ async function runPhase1(biz, businessSlug, log, startTime) {
 
     if (!contentOutput || contentOutput.length < 500) throw new Error('Content too short');
 
-    // Save as DRAFT — Phase 2 will pick it up next run
+    // Save content — stays as "pending" with [Generating] title
+    // Phase 2 will detect it by checking for real content
     await supabase.from('blog_generated_posts').update({
       html_content: contentOutput,
-      status: 'draft',
       updated_at: new Date().toISOString(),
     }).eq('id', postId);
 
