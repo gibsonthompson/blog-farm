@@ -45,13 +45,13 @@ export async function GET(request) {
       .from('blog_businesses').select('*').eq('slug', businessSlug).single();
     if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
-    // Check for a post that finished Phase 1 (word_count updated = content written)
+    // Check for a post that finished Phase 1 (pipeline_step = 1)
     const { data: draft } = await supabase
       .from('blog_generated_posts')
       .select('*')
       .eq('business_id', biz.id)
       .eq('status', 'pending')
-      .gt('word_count', 100)
+      .eq('pipeline_step', 1)
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
@@ -156,10 +156,11 @@ async function runPhase1(biz, businessSlug, log, startTime) {
 
     if (!contentOutput || contentOutput.length < 500) throw new Error('Content too short');
 
-    // Save content — word_count > 0 signals to Phase 2 that this post is ready
+    // Save content and mark as ready for Phase 2
     await supabase.from('blog_generated_posts').update({
       html_content: contentOutput,
       word_count: contentOutput.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length,
+      pipeline_step: 1,
       updated_at: new Date().toISOString(),
     }).eq('id', postId);
 
