@@ -4,6 +4,7 @@ import { submitSitemap } from './google-search-console.js';
 import { submitToIndexNow } from './indexnow.js';
 import { checkPublishCadence } from './cadence.js';
 import { buildBacklinkUpdates } from './reverse-links.js';
+import { generateRssFeed } from './rss.js';
 
 /**
  * Build the blog card HTML for inserting into blog.html
@@ -185,6 +186,19 @@ export async function publishPost(postId) {
     results.errors.push({ step: 'github_commit', error: err.message });
     await logStep(postId, 'publish', 'error', { error: err.message }, Date.now() - startTime);
     throw err; // Critical failure — stop here
+  }
+
+  // 6.5 Regenerate RSS feed (non-critical — AI crawler discovery)
+  try {
+    const feedXml = await generateRssFeed(biz.id);
+    if (feedXml) {
+      await commitMultipleFiles(owner, repo,
+        [{ path: 'feed.xml', content: feedXml }],
+        `rss: update feed after ${post.slug}`, branch);
+      results.steps.push({ step: 'rss_feed', status: 'success' });
+    }
+  } catch (err) {
+    results.errors.push({ step: 'rss_feed', error: err.message });
   }
 
   // 7. Submit sitemap to Google Search Console (non-critical)

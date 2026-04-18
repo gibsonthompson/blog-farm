@@ -189,6 +189,7 @@ STRUCTURE (in order):
    - OG tags (title, description, type=article, url — url matches canonical, no .html)
    - Single JSON-LD @graph with Article + FAQPage + Organization schemas
    - Google Fonts preconnect + Sora + Inter import
+   - RSS feed discovery: <link rel="alternate" type="application/rss+xml" title="CallBird AI Blog" href="https://callbirdai.com/feed.xml">
    - <style> block with the EXACT CSS provided (copy it verbatim)
 3. <body> with:
    - GTM noscript iframe
