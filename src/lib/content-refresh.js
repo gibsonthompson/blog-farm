@@ -11,8 +11,7 @@ const STALE_THRESHOLD_DAYS = 90;
 /**
  * Scan all published posts and identify ones needing refresh.
  * Checks for: age, outdated year references, stale pricing, competitor data.
- * 
- * @returns {{ stale: Array, healthy: Array, stats: Object }}
+ * Skips posts refreshed within the last 60 days.
  */
 export async function scanForStaleContent(businessId) {
   const { data: posts } = await supabase
@@ -29,6 +28,12 @@ export async function scanForStaleContent(businessId) {
   const healthy = [];
 
   for (const post of posts) {
+    // Skip recently refreshed posts
+    if (post.last_refreshed) {
+      const daysSinceRefresh = Math.floor((now - new Date(post.last_refreshed)) / (1000 * 60 * 60 * 24));
+      if (daysSinceRefresh < 60) { healthy.push(post); continue; }
+    }
+
     const reasons = [];
     const publishDate = post.publish_date ? new Date(post.publish_date) : null;
     const daysSincePublish = publishDate
@@ -46,7 +51,7 @@ export async function scanForStaleContent(businessId) {
       reasons.push(`Title references ${titleYear}, current year is ${currentYear}`);
     }
 
-    // Check 3: Comparison posts are high-priority for refresh (competitor pricing changes)
+    // Check 3: Comparison posts are high-priority for refresh
     if (post.category === 'comparison' && daysSincePublish > 60) {
       reasons.push('Comparison post — competitor pricing/features may have changed');
     }
@@ -73,7 +78,6 @@ export async function scanForStaleContent(businessId) {
     }
   }
 
-  // Sort stale by priority (highest first)
   stale.sort((a, b) => b.priority - a.priority);
 
   return {
@@ -92,7 +96,6 @@ export async function scanForStaleContent(businessId) {
 
 /**
  * Analyze a specific post's content and generate refresh recommendations.
- * Uses Claude to identify what specifically needs updating.
  */
 export async function analyzePostForRefresh(businessId, slug, owner, repo, branch, blogPrefix) {
   const filePath = `${blogPrefix}${slug}.html`;
@@ -122,7 +125,7 @@ Return JSON:
 {
   "needs_refresh": true/false,
   "urgency": "high/medium/low",
-  "outdated_items": [{"what": "description", "current": "what it says", "should_be": "what it should say"}],
+  "outdated_items": [{"what": "description", "current": "what it says", "should_be": "what it should say", "section_heading": "nearest h2/h3 heading"}],
   "missing_content": ["topics/sections that should be added"],
   "year_references_to_update": ["list of year strings to find/replace"],
   "estimated_effort": "minor (find-replace) / moderate (rewrite sections) / major (significant rewrite)"
@@ -144,10 +147,9 @@ Return ONLY valid JSON.`
 
 /**
  * Apply a simple year refresh to a post (find/replace year references).
- * For minor updates — changes year in title, headings, schema, and meta.
- * Also updates dateModified.
+ * Also updates dateModified in schema AND sitemap lastmod.
  */
-export async function applyYearRefresh(owner, repo, branch, blogPrefix, slug, oldYear, newYear) {
+export async function applyYearRefresh(owner, repo, branch, blogPrefix, slug, oldYear, newYear, sitemapPath) {
   const filePath = `${blogPrefix}${slug}.html`;
   const file = await fetchFileContent(owner, repo, filePath, branch);
   if (!file) throw new Error(`File not found: ${filePath}`);
@@ -159,26 +161,128 @@ export async function applyYearRefresh(owner, repo, branch, blogPrefix, slug, ol
   const yearPattern = new RegExp(`\\b${oldYear}\\b`, 'g');
   html = html.replace(yearPattern, String(newYear));
 
-  // Update dateModified
+  // Update dateModified in schema
   const dateModPattern = /"dateModified"\s*:\s*"[^"]+"/;
   if (dateModPattern.test(html)) {
     html = html.replace(dateModPattern, `"dateModified": "${today}"`);
   }
 
-  // Commit
-  const commit = await commitMultipleFiles(owner, repo, [
-    { path: filePath, content: html },
-  ], `refresh: update ${slug} year ${oldYear}→${newYear}`, branch);
+  // Build commit files
+  const files = [{ path: filePath, content: html }];
 
-  return { sha: commit.sha, filePath };
+  // Update sitemap lastmod for this URL
+  if (sitemapPath) {
+    const sitemapFile = await fetchFileContent(owner, repo, sitemapPath, branch);
+    if (sitemapFile) {
+      const updatedSitemap = updateSitemapLastmod(sitemapFile.content, slug, today);
+      if (updatedSitemap !== sitemapFile.content) {
+        files.push({ path: sitemapPath, content: updatedSitemap });
+      }
+    }
+  }
+
+  const commit = await commitMultipleFiles(owner, repo, files,
+    `refresh: ${slug} year ${oldYear}→${newYear}`, branch);
+
+  return { sha: commit.sha, filePath, filesChanged: files.length };
 }
 
 /**
- * After refreshing a post, notify search engines.
+ * Full content refresh — Claude rewrites stale sections based on analysis.
+ * Updates dateModified, sitemap lastmod, and notifies search engines.
  */
-export async function notifyRefresh(domain, sitemapPath, indexnowKey, gscPropertyUrl, refreshedUrl) {
-  const results = { gsc: false, indexnow: false };
+export async function applyFullRefresh(owner, repo, branch, blogPrefix, slug, sitemapPath, analysis) {
+  const filePath = `${blogPrefix}${slug}.html`;
+  const file = await fetchFileContent(owner, repo, filePath, branch);
+  if (!file) throw new Error(`File not found: ${filePath}`);
 
+  const today = new Date().toISOString().split('T')[0];
+  const currentYear = new Date().getFullYear();
+
+  // Build the refresh instructions from the analysis
+  const instructions = [];
+  if (analysis.outdated_items?.length) {
+    for (const item of analysis.outdated_items) {
+      instructions.push(`- Fix: "${item.current}" → should be "${item.should_be}" (${item.what})`);
+    }
+  }
+  if (analysis.year_references_to_update?.length) {
+    instructions.push(`- Update all year references to ${currentYear}`);
+  }
+
+  if (instructions.length === 0) {
+    return { skipped: true, reason: 'No actionable items from analysis' };
+  }
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 16000,
+    messages: [{
+      role: 'user',
+      content: `You are refreshing an existing blog post. Make ONLY the specific changes listed below. Do NOT rewrite the entire post. Preserve all HTML structure, CSS, scripts, nav, footer exactly as-is.
+
+CHANGES TO MAKE:
+${instructions.join('\n')}
+
+ALSO:
+- Update dateModified to "${today}" in the JSON-LD schema
+- Update any year references from ${currentYear - 1} to ${currentYear} in titles, headings, and body text
+- Do NOT change the slug, URL, canonical, or OG tags
+- Do NOT add new sections or remove existing ones
+- Do NOT change the writing style or voice
+
+Return the COMPLETE updated HTML file. Every character matters — do not truncate or summarize.
+
+CURRENT HTML:
+${file.content}`
+    }],
+  });
+
+  let updatedHtml = response.content[0].text;
+
+  // Clean up — Claude sometimes wraps in code fences
+  updatedHtml = updatedHtml.replace(/^```html\n?/, '').replace(/\n?```$/, '');
+
+  // Safety: verify it's still a complete HTML file
+  if (!updatedHtml.includes('<!DOCTYPE') && !updatedHtml.includes('<!doctype')) {
+    // Claude may have only returned the changed sections — fall back to targeted replacement
+    return { skipped: true, reason: 'Claude did not return complete HTML — use year-refresh instead' };
+  }
+
+  // Ensure dateModified is updated
+  const dateModPattern = /"dateModified"\s*:\s*"[^"]+"/;
+  if (dateModPattern.test(updatedHtml)) {
+    updatedHtml = updatedHtml.replace(dateModPattern, `"dateModified": "${today}"`);
+  }
+
+  // Build commit files
+  const commitFiles = [{ path: filePath, content: updatedHtml }];
+
+  // Update sitemap lastmod
+  if (sitemapPath) {
+    const sitemapFile = await fetchFileContent(owner, repo, sitemapPath, branch);
+    if (sitemapFile) {
+      const updatedSitemap = updateSitemapLastmod(sitemapFile.content, slug, today);
+      if (updatedSitemap !== sitemapFile.content) {
+        commitFiles.push({ path: sitemapPath, content: updatedSitemap });
+      }
+    }
+  }
+
+  const commit = await commitMultipleFiles(owner, repo, commitFiles,
+    `refresh: update ${slug} (${instructions.length} changes)`, branch);
+
+  return { sha: commit.sha, filePath, changesApplied: instructions.length, filesChanged: commitFiles.length };
+}
+
+/**
+ * After refreshing a post, notify search engines and update DB.
+ */
+export async function notifyRefresh(businessId, domain, sitemapPath, indexnowKey, gscPropertyUrl, refreshedSlug) {
+  const cleanUrl = `https://${domain}/blog-${refreshedSlug}`;
+  const results = { gsc: false, indexnow: false, db: false };
+
+  // Notify GSC
   try {
     await submitSitemap(gscPropertyUrl, `https://${domain}/${sitemapPath}`);
     results.gsc = true;
@@ -186,13 +290,25 @@ export async function notifyRefresh(domain, sitemapPath, indexnowKey, gscPropert
     console.error('GSC refresh notification failed:', err.message);
   }
 
+  // Notify IndexNow
   try {
     if (indexnowKey) {
-      await submitToIndexNow(domain, indexnowKey, [refreshedUrl]);
+      await submitToIndexNow(domain, indexnowKey, [cleanUrl]);
       results.indexnow = true;
     }
   } catch (err) {
     console.error('IndexNow refresh notification failed:', err.message);
+  }
+
+  // Update DB tracking
+  try {
+    await supabase.from('blog_existing_posts')
+      .update({ last_refreshed: new Date().toISOString() })
+      .eq('business_id', businessId)
+      .eq('slug', refreshedSlug);
+    results.db = true;
+  } catch (err) {
+    console.error('DB refresh tracking failed:', err.message);
   }
 
   return results;
@@ -209,22 +325,27 @@ function extractYear(str) {
 
 function calculateRefreshPriority(post, daysSince, reasons) {
   let priority = 0;
-
-  // Age-based priority
   if (daysSince > 180) priority += 5;
   else if (daysSince > 120) priority += 3;
   else if (daysSince > 90) priority += 1;
 
-  // Type-based priority
   if (post.category === 'statistics') priority += 4;
   if (post.category === 'comparison') priority += 3;
   if (post.category === 'cost-analysis') priority += 2;
 
-  // Year in title adds urgency
   if (reasons.some(r => r.includes('current year'))) priority += 5;
-
-  // More reasons = higher priority
   priority += reasons.length;
-
   return priority;
+}
+
+/**
+ * Update the <lastmod> for a specific URL in the sitemap.
+ */
+function updateSitemapLastmod(sitemapXml, slug, newDate) {
+  // Match the URL entry containing this slug and update its lastmod
+  const pattern = new RegExp(
+    `(<loc>[^<]*${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^<]*</loc>\\s*<lastmod>)[^<]*(</lastmod>)`,
+    'i'
+  );
+  return sitemapXml.replace(pattern, `$1${newDate}$2`);
 }
