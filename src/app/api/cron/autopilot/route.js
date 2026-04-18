@@ -5,6 +5,7 @@ import { runQualityControl } from '@/lib/quality-control.js';
 import { validatePost } from '@/lib/post-validation.js';
 import { publishPost } from '@/lib/publish.js';
 import { extractContentAttributes } from '@/lib/performance.js';
+import { sendSms } from '@/lib/sms.js';
 import supabase from '@/lib/supabase.js';
 
 export const maxDuration = 300;
@@ -15,20 +16,12 @@ const MIN_QC_INFO_GAIN = 6;
 /**
  * GET /api/cron/autopilot
  * 
- * Two-phase pipeline — each phase stays well under 300s:
+ * Priority order each run:
+ *   1. Retry approved posts (cadence-blocked last time)
+ *   2. Phase 2: template + QC + publish a draft (pipeline_step = 1)
+ *   3. Phase 1: pick topic + research + write a new draft
  * 
- * PHASE 1 (no drafts found):  Pick topic → Research → Write → save as "draft"
- *   ~3 Claude calls, ~90-150s wall time
- * 
- * PHASE 2 (draft found):  Template → QC → Quality Gate → Publish
- *   ~2 Claude calls, ~60-90s wall time
- * 
- * Schedule: Mon/Wed/Fri 9am ET
- *   Mon: Phase 1 → creates draft
- *   Wed: Phase 2 → publishes it (+ Phase 1 for next post if time allows)
- *   Fri: Phase 2 → publishes next post
- *   
- * Result: 1-2 posts published per week, fully autonomous.
+ * SMS notifications sent when posts need manual review.
  */
 export async function GET(request) {
   const authHeader = request.headers.get('authorization');
@@ -45,7 +38,35 @@ export async function GET(request) {
       .from('blog_businesses').select('*').eq('slug', businessSlug).single();
     if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
-    // Check for a post that finished Phase 1 (pipeline_step = 1)
+    // PRIORITY 1: Retry approved posts (were cadence-blocked)
+    const { data: approved } = await supabase
+      .from('blog_generated_posts')
+      .select('id, title')
+      .eq('business_id', biz.id)
+      .eq('status', 'approved')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (approved) {
+      log.steps.push({ step: 'retry_publish', postId: approved.id, title: approved.title });
+      try {
+        const pubResult = await publishPost(approved.id);
+        if (pubResult.blocked) {
+          log.result = 'still_cadence_blocked';
+          log.steps.push({ step: 'publish', status: 'blocked' });
+        } else {
+          log.result = 'published';
+          log.steps.push({ step: 'publish', status: 'success' });
+        }
+      } catch (err) {
+        log.result = 'retry_publish_error';
+        log.steps.push({ step: 'publish', error: err.message });
+      }
+      return NextResponse.json({ success: true, ...log });
+    }
+
+    // PRIORITY 2: Phase 2 — finish a draft
     const { data: draft } = await supabase
       .from('blog_generated_posts')
       .select('*')
@@ -59,14 +80,18 @@ export async function GET(request) {
     if (draft) {
       log.steps.push({ step: 'phase', value: 2, postId: draft.id, title: draft.title });
       return await runPhase2(draft, biz, log, startTime);
-    } else {
-      log.steps.push({ step: 'phase', value: 1 });
-      return await runPhase1(biz, businessSlug, log, startTime);
     }
+
+    // PRIORITY 3: Phase 1 — start a new post
+    log.steps.push({ step: 'phase', value: 1 });
+    return await runPhase1(biz, businessSlug, log, startTime);
 
   } catch (err) {
     log.result = 'fatal_error';
     log.steps.push({ step: 'fatal', error: err.message });
+
+    await sendSms(`🚨 Blog autopilot FATAL ERROR:\n${err.message.substring(0, 150)}`);
+
     return NextResponse.json({ error: err.message, ...log }, { status: 500 });
   }
 }
@@ -211,6 +236,9 @@ async function runPhase2(draft, biz, log, startTime) {
 
       log.result = 'validation_failed';
       log.steps.push({ step: 'template', errors: validation.errors });
+
+      await sendSms(`❌ Blog post validation failed:\n"${metadata.title}"\nErrors: ${validation.errors.slice(0, 3).map(e => e.message || e).join(', ')}\nhttps://blog-farm.vercel.app`);
+
       return NextResponse.json({ success: true, ...log });
     }
 
@@ -236,6 +264,9 @@ async function runPhase2(draft, biz, log, startTime) {
     log.result = 'template_error';
     log.steps.push({ step: 'template', error: err.message });
     await supabase.from('blog_generated_posts').update({ status: 'failed' }).eq('id', postId);
+
+    await sendSms(`❌ Blog autopilot template error:\n${err.message.substring(0, 100)}\nhttps://blog-farm.vercel.app`);
+
     return NextResponse.json({ success: false, ...log });
   }
 
@@ -264,6 +295,9 @@ async function runPhase2(draft, biz, log, startTime) {
     log.result = 'qc_error';
     log.steps.push({ step: 'qc', error: err.message });
     await supabase.from('blog_generated_posts').update({ status: 'revision_needed' }).eq('id', postId);
+
+    await sendSms(`❌ Blog autopilot QC error:\n${err.message.substring(0, 100)}\nhttps://blog-farm.vercel.app`);
+
     return NextResponse.json({ success: false, ...log });
   }
 
@@ -287,11 +321,15 @@ async function runPhase2(draft, biz, log, startTime) {
 
     await supabase.from('blog_generated_posts').update({
       status: 'pending',
+      pipeline_step: 2,
       qc_notes: JSON.stringify({ scores: qcResult.scores, held_reason: reason }),
     }).eq('id', postId);
 
     log.result = 'held_for_review';
     log.steps.push({ step: 'quality_gate', decision: 'HOLD', reason });
+
+    await sendSms(`⚠️ Blog post needs review:\n"${draft.title.replace('[Generating] ', '')}"\nReason: ${reason}\nScores: ${overall}/10 overall\nhttps://blog-farm.vercel.app`);
+
     return NextResponse.json({ success: true, ...log });
   }
 
@@ -319,6 +357,8 @@ async function runPhase2(draft, biz, log, startTime) {
     log.result = 'publish_error';
     log.steps.push({ step: 'publish', error: err.message });
     await supabase.from('blog_generated_posts').update({ status: 'approved' }).eq('id', postId);
+
+    await sendSms(`❌ Blog publish failed:\n"${draft.title.replace('[Generating] ', '')}"\n${err.message.substring(0, 100)}\nhttps://blog-farm.vercel.app`);
   }
 
   await supabase.from('blog_generation_logs').insert({
