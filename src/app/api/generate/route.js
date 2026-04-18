@@ -192,6 +192,8 @@ async function handleWrite(body, businessSlug) {
 }
 
 // ── STEP 3: HTML Template + Post-Dedup ──
+// For static (CallBird): wraps in full HTML page, sanitizes, validates
+// For nextjs (VoiceAI Connect): extracts metadata, stores raw article body, skips template
 
 async function handleTemplate(body, businessSlug) {
   const { postId } = body;
@@ -206,96 +208,138 @@ async function handleTemplate(body, businessSlug) {
       .from('blog_businesses').select('*').eq('slug', businessSlug).single();
     if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
-    // Wrap content in HTML template
+    const publishMode = biz.publish_mode || 'static';
     const startTime = Date.now();
-    const { metadata, html: rawHtml } = await wrapInTemplate(
-      post.html_content, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix
-    );
+
+    // ── LOAD EXISTING SLUGS (shared) ──
+    const { data: allExisting } = await supabase.from('blog_existing_posts')
+      .select('slug').eq('business_id', biz.id);
+    const existingSlugs = (allExisting || []).map(p => p.slug);
+
+    let metadata, html, wordCount;
+
+    if (publishMode === 'nextjs') {
+      // ── NEXTJS MODE: Extract metadata + raw article body ──
+      // Step 2 output format: <metadata>{JSON}</metadata>\n<html_content>...article HTML...</html_content>
+      const raw = post.html_content;
+
+      // Extract metadata JSON
+      const metaMatch = raw.match(/<metadata>\s*([\s\S]*?)\s*<\/metadata>/);
+      if (metaMatch) {
+        try {
+          metadata = JSON.parse(metaMatch[1].replace(/```json\n?|```/g, '').trim());
+        } catch {
+          metadata = { title: post.title, slug: post.slug, meta_description: '', primary_keyword: post.primary_keyword };
+        }
+      } else {
+        metadata = { title: post.title, slug: post.slug, meta_description: '', primary_keyword: post.primary_keyword };
+      }
+
+      // Extract article HTML (between <html_content> tags, or everything after </metadata>)
+      const contentMatch = raw.match(/<html_content>\s*([\s\S]*?)\s*<\/html_content>/);
+      if (contentMatch) {
+        html = contentMatch[1].trim();
+      } else {
+        // Fallback: strip metadata block, use the rest
+        html = raw.replace(/<metadata>[\s\S]*?<\/metadata>/, '').trim();
+      }
+
+      // Strip any accidental full-page wrapper (<!DOCTYPE, <html>, <body>) — keep only article content
+      html = html.replace(/<!DOCTYPE[^>]*>/gi, '')
+        .replace(/<\/?html[^>]*>/gi, '')
+        .replace(/<head>[\s\S]*?<\/head>/gi, '')
+        .replace(/<\/?body[^>]*>/gi, '')
+        .trim();
+
+      wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
+
+    } else {
+      // ── STATIC MODE: Full HTML template wrapping (CallBird) ──
+      const result = await wrapInTemplate(
+        post.html_content, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix
+      );
+      metadata = result.metadata;
+      const rawHtml = result.html;
+
+      // Deterministic sanitization
+      html = sanitizeGeneratedHtml(rawHtml, existingSlugs);
+      wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
+
+      // Programmatic validation (CallBird-specific checks: GTM, phone, pricing)
+      const validation = validatePost(html, metadata, existingSlugs);
+
+      if (!validation.valid) {
+        await supabase.from('blog_generated_posts').update({
+          title: metadata.title,
+          slug: metadata.slug,
+          html_content: html,
+          word_count: wordCount,
+          status: 'revision_needed',
+          qc_notes: JSON.stringify({ validation_errors: validation.errors, validation_warnings: validation.warnings }),
+          updated_at: new Date().toISOString(),
+        }).eq('id', postId);
+
+        return NextResponse.json({
+          success: true, step: 3, postId,
+          validation: { valid: false, errors: validation.errors, warnings: validation.warnings, stats: validation.stats },
+          post: { title: metadata.title, slug: metadata.slug, word_count: wordCount, status: 'revision_needed' },
+        });
+      }
+    }
+
     const duration = Date.now() - startTime;
 
-  // ── LOAD EXISTING SLUGS ──
-  const { data: allExisting } = await supabase.from('blog_existing_posts')
-    .select('slug').eq('business_id', biz.id);
-  const existingSlugs = (allExisting || []).map(p => p.slug);
-
-  // ── DETERMINISTIC SANITIZATION — fix H1s, broken links, Quick Answer boxes ──
-  const html = sanitizeGeneratedHtml(rawHtml, existingSlugs);
-
-  const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
-
-  // ── PROGRAMMATIC VALIDATION — hard code checks ──
-
-  const validation = validatePost(html, metadata, existingSlugs);
-
-  if (!validation.valid) {
+    // ── SHARED: Update post with metadata + content ──
     await supabase.from('blog_generated_posts').update({
       title: metadata.title,
       slug: metadata.slug,
+      meta_description: metadata.meta_description,
+      primary_keyword: metadata.primary_keyword,
+      secondary_keywords: metadata.secondary_keywords || [],
+      read_time: metadata.read_time,
+      emoji: metadata.emoji,
+      excerpt: metadata.excerpt,
       html_content: html,
       word_count: wordCount,
-      status: 'revision_needed',
-      qc_notes: JSON.stringify({ validation_errors: validation.errors, validation_warnings: validation.warnings }),
       updated_at: new Date().toISOString(),
     }).eq('id', postId);
 
-    return NextResponse.json({
-      success: true, step: 3, postId,
-      validation: { valid: false, errors: validation.errors, warnings: validation.warnings, stats: validation.stats },
-      post: { title: metadata.title, slug: metadata.slug, word_count: wordCount, status: 'revision_needed' },
+    // ── SHARED: Track content attributes ──
+    try {
+      const { extractContentAttributes } = await import('@/lib/performance.js');
+      const attrs = extractContentAttributes(html, metadata, null);
+      attrs.post_id = postId;
+      await supabase.from('blog_post_attributes').upsert(attrs, { onConflict: 'post_id' });
+    } catch (attrErr) {
+      console.warn('[blog-farm] Attribute tracking failed (non-blocking):', attrErr.message);
+    }
+
+    // ── SHARED: Post-generation dedup check ──
+    const postCheck = await validatePostUniqueness(biz.id, metadata.title, metadata.primary_keyword, metadata.slug);
+    if (!postCheck.unique) {
+      await supabase.from('blog_generated_posts').update({
+        status: 'revision_needed',
+        qc_notes: JSON.stringify({ dedup_conflicts: postCheck.conflicts }),
+      }).eq('id', postId);
+
+      return NextResponse.json({
+        success: true, step: 3, postId, dedup: { unique: false, recommendation: postCheck.recommendation },
+        post: { title: metadata.title, slug: metadata.slug, word_count: wordCount },
+      });
+    }
+
+    // Log
+    await supabase.from('blog_generation_logs').insert({
+      post_id: postId, step: 'html_template', status: 'success',
+      details: { word_count: wordCount, publish_mode: publishMode,
+        framework_used: metadata.framework_used, information_gain: metadata.information_gain },
+      duration_ms: duration,
     });
-  }
-
-  // Update post with final data
-  await supabase.from('blog_generated_posts').update({
-    title: metadata.title,
-    slug: metadata.slug,
-    meta_description: metadata.meta_description,
-    primary_keyword: metadata.primary_keyword,
-    secondary_keywords: metadata.secondary_keywords || [],
-    read_time: metadata.read_time,
-    emoji: metadata.emoji,
-    excerpt: metadata.excerpt,
-    html_content: html,
-    word_count: wordCount,
-    updated_at: new Date().toISOString(),
-  }).eq('id', postId);
-
-  // ── TRACK CONTENT ATTRIBUTES for performance pattern analysis ──
-  try {
-    const { extractContentAttributes } = await import('@/lib/performance.js');
-    const attrs = extractContentAttributes(html, metadata, null); // QC scores added in step 4
-    attrs.post_id = postId;
-    await supabase.from('blog_post_attributes').upsert(attrs, { onConflict: 'post_id' });
-  } catch (attrErr) {
-    console.warn('[blog-farm] Attribute tracking failed (non-blocking):', attrErr.message);
-  }
-
-  // Post-generation dedup check
-  const postCheck = await validatePostUniqueness(biz.id, metadata.title, metadata.primary_keyword, metadata.slug);
-  if (!postCheck.unique) {
-    await supabase.from('blog_generated_posts').update({
-      status: 'revision_needed',
-      qc_notes: JSON.stringify({ dedup_conflicts: postCheck.conflicts }),
-    }).eq('id', postId);
 
     return NextResponse.json({
-      success: true, step: 3, postId, dedup: { unique: false, recommendation: postCheck.recommendation },
-      post: { title: metadata.title, slug: metadata.slug, word_count: wordCount },
+      success: true, step: 3, postId, dedup: { unique: true },
+      post: { title: metadata.title, slug: metadata.slug, word_count: wordCount, status: 'pending' },
     });
-  }
-
-  // Log
-  await supabase.from('blog_generation_logs').insert({
-    post_id: postId, step: 'html_template', status: 'success',
-    details: { word_count: wordCount, framework_used: metadata.framework_used,
-      information_gain: metadata.information_gain },
-    duration_ms: duration,
-  });
-
-  return NextResponse.json({
-    success: true, step: 3, postId, dedup: { unique: true },
-    post: { title: metadata.title, slug: metadata.slug, word_count: wordCount, status: 'pending' },
-  });
   } catch (err) {
     console.error(`[blog-farm] Step 3 error:`, err);
     return NextResponse.json({ error: `Template step failed: ${err.message}` }, { status: 500 });
