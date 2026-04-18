@@ -45,18 +45,21 @@ export async function GET(request) {
       .from('blog_businesses').select('*').eq('slug', businessSlug).single();
     if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
-    // Check for a post that finished Phase 1 (has real content but title still shows [Generating])
+    // Check for a post that finished Phase 1 (has real content but hasn't been templated/published)
     const { data: drafts } = await supabase
       .from('blog_generated_posts')
       .select('*')
       .eq('business_id', biz.id)
       .eq('status', 'pending')
-      .like('title', '[Generating]%')
       .order('created_at', { ascending: true })
-      .limit(5);
+      .limit(10);
 
-    // Find the first one with real content (not placeholder)
-    const draft = (drafts || []).find(d => d.html_content && d.html_content.length > 1000);
+    // Find the first one with real content that hasn't been templated yet
+    const draft = (drafts || []).find(d => 
+      d.html_content && 
+      d.html_content.length > 1000 && 
+      d.title?.startsWith('[Generating]')
+    );
 
     if (draft) {
       log.steps.push({ step: 'phase', value: 2, postId: draft.id, title: draft.title });
