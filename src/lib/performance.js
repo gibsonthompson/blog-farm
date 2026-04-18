@@ -681,7 +681,7 @@ export async function discoverContentGaps(businessId) {
   const existingSlugs = (posts || []).map(p => p.slug.toLowerCase());
 
   // Find queries with high impressions that don't match any existing post
-  const gaps = allQueries
+  const rawGaps = allQueries
     .filter(q => q.impressions >= 20 && q.position > 5) // Showing up but not dominating
     .filter(q => {
       const qLower = q.query.toLowerCase();
@@ -693,8 +693,57 @@ export async function discoverContentGaps(businessId) {
       return !existingKeywords.some(kw => kw.includes(qLower) || qLower.includes(kw))
         && !existingSlugs.some(s => qLower.split(' ').every(w => s.includes(w)));
     })
-    .sort((a, b) => b.impressions - a.impressions)
-    .slice(0, 15);
+    .sort((a, b) => b.impressions - a.impressions);
+
+  // Cluster similar queries (60%+ word overlap)
+  const clusters = [];
+  const assigned = new Set();
+
+  for (const gap of rawGaps) {
+    if (assigned.has(gap.query)) continue;
+
+    const cluster = {
+      representative: gap.query,
+      queries: [gap],
+      totalImpressions: gap.impressions,
+      totalClicks: gap.clicks,
+      bestPosition: gap.position,
+    };
+
+    const gapWords = new Set(gap.query.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+
+    for (const other of rawGaps) {
+      if (other.query === gap.query || assigned.has(other.query)) continue;
+      const otherWords = new Set(other.query.toLowerCase().split(/\s+/).filter(w => w.length > 2));
+
+      // Calculate word overlap
+      let overlap = 0;
+      for (const w of gapWords) { if (otherWords.has(w)) overlap++; }
+      const similarity = overlap / Math.max(gapWords.size, otherWords.size);
+
+      if (similarity >= 0.6) {
+        cluster.queries.push(other);
+        cluster.totalImpressions += other.impressions;
+        cluster.totalClicks += other.clicks;
+        cluster.bestPosition = Math.min(cluster.bestPosition, other.position);
+        assigned.add(other.query);
+      }
+    }
+
+    assigned.add(gap.query);
+    clusters.push(cluster);
+  }
+
+  // Sort clusters by total impressions and return top 15
+  clusters.sort((a, b) => b.totalImpressions - a.totalImpressions);
+  const gaps = clusters.slice(0, 15).map(c => ({
+    query: c.representative,
+    impressions: c.totalImpressions,
+    clicks: c.totalClicks,
+    position: round(c.bestPosition, 1),
+    clusterSize: c.queries.length,
+    relatedQueries: c.queries.slice(1, 4).map(q => q.query),
+  }));
 
   return { gaps };
 }

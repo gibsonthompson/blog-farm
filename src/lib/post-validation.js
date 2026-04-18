@@ -141,6 +141,12 @@ export function validatePost(html, metadata, existingSlugs = []) {
     if (!canonical.includes('callbirdai.com')) {
       errors.push(`Canonical URL points to wrong domain: ${canonical}`);
     }
+    if (canonical.includes('www.')) {
+      warnings.push(`Canonical uses www — should be https://callbirdai.com/... (no www)`);
+    }
+    if (canonical.endsWith('.html')) {
+      warnings.push(`Canonical ends with .html — Vercel cleanUrls strips this. Use without .html`);
+    }
   }
 
   // 11. Year check — current year in title

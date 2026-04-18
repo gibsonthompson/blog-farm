@@ -185,8 +185,8 @@ STRUCTURE (in order):
    - <title> tag (under 60 chars)
    - Meta description (under 160 chars)
    - Meta keywords
-   - Canonical URL: https://callbirdai.com/blog-{slug}.html
-   - OG tags (title, description, type=article, url)
+   - Canonical URL: https://callbirdai.com/blog-{slug} (NO .html extension)
+   - OG tags (title, description, type=article, url — url matches canonical, no .html)
    - Single JSON-LD @graph with Article + FAQPage + Organization schemas
    - Google Fonts preconnect + Sora + Inter import
    - <style> block with the EXACT CSS provided (copy it verbatim)
@@ -202,8 +202,22 @@ HERO META MUST SAY:
 <div class="hero-meta">
   <span>📅 [formatted date]</span><span>•</span>
   <span>⏱️ [X] min read</span><span>•</span>
-  <span>By Gibson Thompson</span>
+  <span>By <a href="/author/gibson-thompson" style="color:white;text-decoration:underline">Gibson Thompson</a></span>
 </div>
+
+JSON-LD SCHEMA MUST INCLUDE Organization in the @graph:
+{
+  "@type": "Organization",
+  "@id": "https://callbirdai.com/#organization",
+  "name": "CallBird AI",
+  "url": "https://callbirdai.com",
+  "logo": "https://i.imgur.com/qwyQQW5.png",
+  "sameAs": ["https://www.linkedin.com/company/callbird-ai/"]
+}
+
+Article schema author MUST link to the author page:
+"author": {"@type": "Person", "name": "Gibson Thompson", "url": "https://callbirdai.com/author/gibson-thompson"}
+"publisher": {"@id": "https://callbirdai.com/#organization"}
 
 INSIDE THE ARTICLE, use these components:
 - Use .stat-highlight for important numbers (sparingly — max 3)
@@ -220,7 +234,8 @@ CRITICAL RULES:
 - CTA links go to /start or start.html
 - Use blog- prefix for internal post links (e.g., blog-callbird-vs-rosie.html)
 - Schema datePublished and dateModified use today's date
-- Schema author: {"@type": "Person", "name": "Gibson Thompson"}
+- Schema author: {"@type": "Person", "name": "Gibson Thompson", "url": "https://callbirdai.com/author/gibson-thompson"}
+- Schema publisher: {"@id": "https://callbirdai.com/#organization"}
 
 EXACT FAQ HTML STRUCTURE (the toggle script requires this exact structure):
 <div class="faq-section">
