@@ -5,107 +5,179 @@ import { loadBusinessContext } from './claude.js';
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /**
- * The master opportunity map for the AI receptionist niche.
- * This defines every category of content we SHOULD have.
- * The strategist brain compares this against what EXISTS
- * and identifies gaps.
+ * Per-business opportunity maps.
+ * CallBird has a detailed hardcoded map.
+ * Other businesses use AI-driven topic generation from their brand kit.
  */
-const OPPORTUNITY_MAP = {
-  industries: {
-    description: 'Industry-specific landing/blog posts: "Best AI Receptionist for [Industry]"',
-    targets: [
-      'dentists', 'lawyers', 'HVAC', 'plumbers', 'electricians',
-      'contractors', 'restaurants', 'veterinary clinics', 'chiropractors',
-      'property management', 'auto repair shops', 'salons and spas',
-      'cleaning companies', 'real estate agents', 'medical offices',
-      'therapists and counselors', 'accounting firms', 'insurance agencies',
-      'roofing companies', 'landscaping companies', 'pest control',
-      'moving companies', 'towing companies', 'fitness studios and gyms',
-      'funeral homes', 'optometry offices', 'pediatric offices',
-      'home inspectors', 'photography studios', 'wedding planners',
-    ],
+const OPPORTUNITY_MAPS = {
+  callbird: {
+    industries: {
+      description: 'Industry-specific posts: "Best AI Receptionist for [Industry]"',
+      targets: [
+        'dentists', 'lawyers', 'HVAC', 'plumbers', 'electricians',
+        'contractors', 'restaurants', 'veterinary clinics', 'chiropractors',
+        'property management', 'auto repair shops', 'salons and spas',
+        'cleaning companies', 'real estate agents', 'medical offices',
+        'therapists and counselors', 'accounting firms', 'insurance agencies',
+        'roofing companies', 'landscaping companies', 'pest control',
+        'moving companies', 'towing companies', 'fitness studios and gyms',
+        'funeral homes', 'optometry offices', 'pediatric offices',
+        'home inspectors', 'photography studios', 'wedding planners',
+      ],
+    },
+    competitors: {
+      description: 'Head-to-head comparison posts: "CallBird vs [Competitor]"',
+      targets: [
+        'Smith.ai', 'Ruby Receptionists', 'Dialzara', 'My AI Front Desk',
+        'Goodcall', 'AIRA', 'Upfirst', 'Rosie AI', 'Abby Connect',
+        'Nexa', 'PATLive', 'VoiceNation', 'AnswerConnect', 'Davinci',
+        'Numa', 'Slang.ai', 'Simple Phones AI', 'Bland AI',
+      ],
+    },
+    howTo: {
+      description: 'Practical how-to guides',
+      targets: [
+        'how to stop missing business calls',
+        'how to set up an AI receptionist in 10 minutes',
+        'how to reduce no-shows with automated reminders',
+        'how to handle after-hours calls without hiring staff',
+        'how to route emergency calls with AI',
+        'how to train an AI receptionist on your business',
+        'how to switch from a human receptionist to AI',
+        'how to answer calls professionally when you are a solo business',
+        'how to capture leads from every phone call',
+        'how to automate appointment booking by phone',
+      ],
+    },
+    costAnalysis: {
+      description: 'Data-driven cost comparisons and ROI analyses',
+      targets: [
+        'cost of hiring a receptionist vs AI receptionist',
+        'cost of missed calls for small business',
+        'AI receptionist ROI calculator',
+        'answering service cost comparison',
+        'how much do missed calls cost dental practices',
+        'virtual receptionist pricing comparison',
+      ],
+    },
+    statistics: {
+      description: 'Data-driven statistical roundups',
+      targets: [
+        'AI receptionist statistics',
+        'small business phone call statistics',
+        'missed call statistics by industry',
+      ],
+    },
+    guides: {
+      description: 'Comprehensive definitive guides',
+      targets: [
+        'complete guide to AI receptionists',
+        'AI receptionist vs chatbot differences',
+        'AI receptionist integration guide',
+        'HIPAA compliant AI receptionist guide',
+        'AI receptionist for multi-location businesses',
+      ],
+    },
+    brandAwareness: {
+      description: 'Brand/product awareness content',
+      targets: [
+        'what is CallBird AI',
+        'CallBird AI features and pricing',
+        'AI receptionist FAQ comprehensive',
+      ],
+    },
   },
-  competitors: {
-    description: 'Head-to-head comparison posts: "CallBird vs [Competitor]"',
-    targets: [
-      'Smith.ai', 'Ruby Receptionists', 'Dialzara', 'My AI Front Desk',
-      'Goodcall', 'AIRA', 'Upfirst', 'Rosie AI', 'Abby Connect',
-      'Nexa', 'PATLive', 'VoiceNation', 'AnswerConnect', 'Davinci',
-      'Numa', 'Slang.ai', 'Simple Phones AI', 'Bland AI',
-    ],
-  },
-  howTo: {
-    description: 'Practical how-to guides that solve specific problems',
-    targets: [
-      'how to stop missing business calls',
-      'how to set up an AI receptionist in 10 minutes',
-      'how to reduce no-shows with automated reminders',
-      'how to handle after-hours calls without hiring staff',
-      'how to route emergency calls with AI',
-      'how to train an AI receptionist on your business',
-      'how to switch from a human receptionist to AI',
-      'how to answer calls professionally when you are a solo business',
-      'how to capture leads from every phone call',
-      'how to automate appointment booking by phone',
-    ],
-  },
-  costAnalysis: {
-    description: 'Data-driven cost comparisons and ROI analyses',
-    targets: [
-      'cost of hiring a receptionist vs AI receptionist',
-      'cost of missed calls for small business',
-      'AI receptionist ROI calculator',
-      'answering service cost comparison',
-      'how much do missed calls cost dental practices',
-      'virtual receptionist pricing comparison',
-    ],
-  },
-  statistics: {
-    description: 'Data-packed posts with industry statistics',
-    targets: [
-      'AI receptionist statistics',
-      'missed call statistics for small business',
-      'phone call conversion rate statistics',
-      'AI adoption in small business statistics',
-      'customer service automation statistics',
-    ],
-  },
-  guides: {
-    description: 'Comprehensive definitive guides on broad topics',
-    targets: [
-      'complete guide to AI receptionists',
-      'AI receptionist vs chatbot differences',
-      'AI answering service ultimate guide',
-      'HIPAA compliant AI receptionist guide',
-      'best AI answering services ranked',
-      'AI receptionist for multi-location businesses',
-      'AI receptionist integration guide',
-      'choosing between AI and live answering service',
-    ],
-  },
-  aeo: {
-    description: 'AEO-optimized posts designed for AI engine citation',
-    targets: [
-      'what is CallBird AI',
-      'CallBird AI features and pricing',
-      'AI receptionist FAQ comprehensive',
-      'how does AI phone answering work',
-    ],
+
+  'voiceai-connect': {
+    agencyScaling: {
+      description: 'Scaling past common plateaus',
+      targets: [
+        'how to scale AI receptionist agency past 20 clients',
+        'hiring vs automation for growing AI agencies',
+        'agency operations at 50 vs 100 clients',
+        'when to upgrade from starter to professional plan',
+        'building an agency team with white label AI',
+      ],
+    },
+    ghlMigration: {
+      description: 'GoHighLevel alternative and migration content',
+      targets: [
+        'switching from GoHighLevel to white label AI receptionist',
+        'GoHighLevel AI receptionist limitations',
+        'A2P 10DLC registration problems GoHighLevel agencies',
+        'GoHighLevel vs dedicated AI receptionist platform',
+        'why agencies leave GoHighLevel for specialized platforms',
+      ],
+    },
+    clientRetention: {
+      description: 'Reducing churn and retaining AI receptionist clients',
+      targets: [
+        'reduce AI receptionist client churn rate',
+        'how to show ROI to AI receptionist clients',
+        'client onboarding checklist AI receptionist agency',
+        'monthly reporting templates AI receptionist agency',
+        'how to handle client complaints about AI voice quality',
+      ],
+    },
+    pricingStrategy: {
+      description: 'Agency pricing and packaging',
+      targets: [
+        'how to price AI receptionist services for different industries',
+        'AI receptionist agency pricing tiers strategy',
+        'value based pricing for AI phone answering',
+        'bundling AI receptionist with other agency services',
+        'raising prices on existing AI receptionist clients',
+      ],
+    },
+    salesPlaybooks: {
+      description: 'Vertical-specific sales approaches',
+      targets: [
+        'sell AI receptionist to home service contractors',
+        'sell AI receptionist to medical practices compliance',
+        'sell AI receptionist to property management companies',
+        'sell AI receptionist to insurance agencies',
+        'cold email templates for AI receptionist sales',
+        'LinkedIn outreach for AI receptionist agencies',
+        'demo script for selling AI receptionist to local businesses',
+      ],
+    },
+    marketTrends: {
+      description: 'Industry analysis and trend content',
+      targets: [
+        'AI receptionist market size and growth 2026',
+        'white label AI voice agent industry trends',
+        'future of AI phone answering for small businesses',
+        'AI receptionist vs human receptionist cost comparison 2026',
+        'how AI search engines change white label agency marketing',
+      ],
+    },
+    competitorUpdates: {
+      description: 'Platform comparison refreshes',
+      targets: [
+        'VoiceAI Connect vs Synthflow detailed comparison',
+        'VoiceAI Connect vs Retell AI for agencies',
+        'best white label AI receptionist platforms ranked update',
+        'white label AI receptionist platform pricing comparison update',
+      ],
+    },
   },
 };
 
 /**
- * Analyze existing coverage and identify gaps.
- * Returns a structured analysis without using Claude (fast, deterministic).
+ * Analyze existing coverage against opportunity map.
+ * Returns gap analysis if a map exists for this business.
  */
-function analyzeGaps(existingPosts) {
+function analyzeGaps(existingPosts, businessSlug) {
+  const map = OPPORTUNITY_MAPS[businessSlug];
+  if (!map) return null; // No map for this business — use AI-only strategy
+
   const existingSlugs = existingPosts.map(p => p.slug.toLowerCase());
   const existingKeywords = existingPosts.map(p => (p.primary_keyword || '').toLowerCase());
   const existingTitles = existingPosts.map(p => p.title.toLowerCase());
 
   const gaps = {};
 
-  for (const [category, data] of Object.entries(OPPORTUNITY_MAP)) {
+  for (const [category, data] of Object.entries(map)) {
     const covered = [];
     const uncovered = [];
 
@@ -113,16 +185,12 @@ function analyzeGaps(existingPosts) {
       const targetLower = target.toLowerCase();
       const slugified = targetLower.replace(/[^a-z0-9]+/g, '-');
 
-      // Check if any existing post covers this topic
       const isCovered = existingSlugs.some(s => s.includes(slugified) || slugified.includes(s)) ||
         existingKeywords.some(k => k.includes(targetLower) || targetLower.includes(k)) ||
         existingTitles.some(t => t.includes(targetLower) || targetLower.includes(t));
 
-      if (isCovered) {
-        covered.push(target);
-      } else {
-        uncovered.push(target);
-      }
+      if (isCovered) covered.push(target);
+      else uncovered.push(target);
     }
 
     gaps[category] = {
@@ -140,64 +208,72 @@ function analyzeGaps(existingPosts) {
 }
 
 /**
- * Use Claude as a content strategist to recommend the next best posts to write.
- * This is the "big brain" — it considers gaps, business priorities, seasonal relevance,
- * keyword difficulty signals, and AEO optimization.
- * 
- * @param {string} businessSlug 
- * @param {number} count - How many posts to recommend (default 5)
- * @returns {Array} Prioritized recommendations with reasoning
+ * Recommend next posts to write.
+ * Uses opportunity map gap analysis (if available) + Claude strategic thinking.
  */
 export async function recommendNextPosts(businessSlug, count = 5) {
   const { business, brandKit, existingPosts } = await loadBusinessContext(businessSlug);
-  const gaps = analyzeGaps(existingPosts);
+  const gaps = analyzeGaps(existingPosts, businessSlug);
 
-  // Build a concise summary of existing coverage
   const existingList = existingPosts
     .map(p => `• "${p.title}" [${p.category || 'unknown'}] — keyword: ${p.primary_keyword || 'N/A'}`)
     .join('\n');
 
-  // Build the gap analysis summary
-  const gapSummary = Object.entries(gaps)
-    .map(([cat, data]) => {
-      const gapList = data.gapTopics.length > 0 
-        ? data.gapTopics.map(t => `  - ${t}`).join('\n') 
-        : '  (fully covered)';
-      return `${cat.toUpperCase()} (${data.coveragePercent}% covered, ${data.uncovered} gaps):\n${gapList}`;
-    })
-    .join('\n\n');
+  // Build gap summary if we have a map
+  let gapSummary = '';
+  if (gaps) {
+    gapSummary = `=== GAP ANALYSIS (from opportunity map) ===\n` +
+      Object.entries(gaps)
+        .map(([cat, data]) => {
+          const gapList = data.gapTopics.length > 0
+            ? data.gapTopics.map(t => `  - ${t}`).join('\n')
+            : '  (fully covered)';
+          return `${cat.toUpperCase()} (${data.coveragePercent}% covered, ${data.uncovered} gaps):\n${gapList}`;
+        })
+        .join('\n\n');
+  }
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 4000,
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }],
     messages: [{
       role: 'user',
-      content: `You are an expert SEO content strategist for ${business.name} (${business.domain}), an AI receptionist service for small businesses.
+      content: `You are an expert SEO/AEO content strategist for ${business.name} (${business.domain}).
 
 Current date: ${new Date().toISOString().split('T')[0]}
+
+=== COMPANY ===
+${brandKit.company_description}
+
+=== TARGET AUDIENCE ===
+${brandKit.target_audience}
+
+=== PRIMARY KEYWORDS ===
+${brandKit.primary_keywords.join(', ')}
+
+=== COMPETITORS ===
+${brandKit.competitor_names.join(', ')}
 
 === EXISTING BLOG POSTS (${existingPosts.length} total) ===
 ${existingList}
 
-=== GAP ANALYSIS ===
 ${gapSummary}
 
-=== BUSINESS CONTEXT ===
-Target audience: ${brandKit.target_audience}
-Primary keywords: ${brandKit.primary_keywords.join(', ')}
-Competitors: ${brandKit.competitor_names.join(', ')}
-
 === YOUR TASK ===
-Recommend exactly ${count} blog posts to create next, in priority order. Consider:
+FIRST: Search for trending topics and recent developments in this space to identify timely content opportunities.
+
+Then recommend exactly ${count} blog posts to create next, in priority order. Consider:
 
 1. **Coverage gaps** — What important topics are completely missing?
 2. **Business impact** — Which posts would drive the most leads/conversions?
-3. **Keyword opportunity** — Target keywords with commercial intent, not just informational
-4. **Topical authority** — Fill in clusters to strengthen domain authority in key areas
+3. **Keyword opportunity** — Target keywords with commercial intent
+4. **Topical authority** — Fill in clusters to strengthen domain authority
 5. **Seasonal relevance** — Is anything timely right now (${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })})?
-6. **AEO optimization** — Which posts would help CallBird get cited by AI engines?
+6. **AEO optimization** — Which posts would help ${business.name} get cited by AI engines (ChatGPT, Perplexity)?
 7. **Anti-cannibalization** — Do NOT recommend topics that overlap with existing posts
 8. **Competitor vulnerability** — Where can we outrank thin or outdated competitor content?
+9. **Fresh research** — Use web search to validate that recommended keywords have actual search demand
 
 For each recommendation, provide:
 - A specific title
@@ -212,7 +288,7 @@ Return ONLY valid JSON array:
     "rank": 1,
     "title": "Blog Post Title Here",
     "target_keyword": "primary keyword to target",
-    "post_type": "industry",
+    "post_type": "guide",
     "reasoning": "Why this post should be created next",
     "business_impact": "high",
     "notes": "Any special instructions for the writer"
@@ -225,7 +301,8 @@ No markdown fences. No explanation outside the JSON. Just the array.`
 
   let recommendations;
   try {
-    const text = response.content[0].text.trim().replace(/```json\n?|```/g, '');
+    const textBlocks = response.content.filter(b => b.type === 'text');
+    const text = textBlocks.map(b => b.text).join('\n').trim().replace(/```json\n?|```/g, '');
     recommendations = JSON.parse(text);
   } catch (e) {
     throw new Error(`Strategist response was not valid JSON: ${e.message}`);
@@ -235,16 +312,26 @@ No markdown fences. No explanation outside the JSON. Just the array.`
     recommendations,
     coverage: gaps,
     existingCount: existingPosts.length,
-    totalOpportunities: Object.values(gaps).reduce((sum, g) => sum + g.uncovered, 0),
+    totalOpportunities: gaps ? Object.values(gaps).reduce((sum, g) => sum + g.uncovered, 0) : null,
   };
 }
 
 /**
  * Quick gap analysis without Claude (instant, no API cost)
+ * Only works for businesses with an opportunity map.
  */
 export async function getGapAnalysis(businessSlug) {
   const { existingPosts } = await loadBusinessContext(businessSlug);
-  const gaps = analyzeGaps(existingPosts);
+  const gaps = analyzeGaps(existingPosts, businessSlug);
+
+  if (!gaps) {
+    return {
+      existingCount: existingPosts.length,
+      totalOpportunities: null,
+      coverage: null,
+      note: `No opportunity map defined for "${businessSlug}". Use recommendNextPosts() for AI-driven recommendations.`,
+    };
+  }
 
   return {
     existingCount: existingPosts.length,

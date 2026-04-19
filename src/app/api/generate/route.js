@@ -225,7 +225,7 @@ async function handleTemplate(body, businessSlug) {
 
     if (publishMode === 'nextjs') {
       // ── NEXTJS MODE: Extract metadata + raw article body ──
-      // Step 2 output format: <metadata>{JSON}</metadata>\n<html_content>...article HTML...</html_content>
+      // Step 2 output format: <metadata>{JSON}</metadata>\n<content>...article HTML...</content>
       const raw = post.html_content;
 
       // Extract metadata JSON
@@ -240,8 +240,8 @@ async function handleTemplate(body, businessSlug) {
         metadata = { title: post.title, slug: post.slug, meta_description: '', primary_keyword: post.primary_keyword };
       }
 
-      // Extract article HTML (between <html_content> tags, or everything after </metadata>)
-      const contentMatch = raw.match(/<html_content>\s*([\s\S]*?)\s*<\/html_content>/);
+      // Extract article HTML (between <content> tags, or everything after </metadata>)
+      const contentMatch = raw.match(/<content>\s*([\s\S]*?)\s*<\/content>/);
       if (contentMatch) {
         html = contentMatch[1].trim();
       } else {
@@ -249,12 +249,15 @@ async function handleTemplate(body, businessSlug) {
         html = raw.replace(/<metadata>[\s\S]*?<\/metadata>/, '').trim();
       }
 
-      // Strip any accidental full-page wrapper (<!DOCTYPE, <html>, <body>) — keep only article content
+      // Strip accidental full-page wrapper (<!DOCTYPE, <html>, <body>) — keep only article content
       html = html.replace(/<!DOCTYPE[^>]*>/gi, '')
         .replace(/<\/?html[^>]*>/gi, '')
         .replace(/<head>[\s\S]*?<\/head>/gi, '')
         .replace(/<\/?body[^>]*>/gi, '')
         .trim();
+
+      // Fix internal link format: convert blog-{slug}.html → /blog/{slug} for nextjs
+      html = html.replace(/href="blog-([^"]+)\.html"/gi, 'href="/blog/$1"');
 
       wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
 

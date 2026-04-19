@@ -537,9 +537,11 @@ export function extractContentAttributes(html, metadata, qcResult) {
     primary_keyword_in_first_100: keywordInFirst100,
 
     // ── Link signals ──
-    internal_link_count: (html.match(/href="blog-[^"]*\.html"/gi)||[]).length,
-    // EDGE CASE #5: Exclude all callbirdai.com subdomains from external count
-    external_link_count: (html.match(/href="https?:\/\/(?!([^"]*\.)?callbirdai\.com)[^"]+"/gi)||[]).length,
+    // Count internal links: both blog-{slug}.html (static) and /blog/{slug} (nextjs) formats
+    internal_link_count: (html.match(/href="(?:blog-[^"]*\.html|\/blog\/[^"]+)"/gi)||[]).length,
+    // External links: any full URL that isn't an internal blog link or same-domain link
+    external_link_count: (html.match(/href="https?:\/\/[^"]+"/gi)||[]).length
+      - (html.match(/href="https?:\/\/[^"]*(?:callbirdai\.com|myvoiceaiconnect\.com)[^"]*"/gi)||[]).length,
 
     // ── Structural elements ──
     has_comparison_table: /<table|table-wrap/i.test(html),

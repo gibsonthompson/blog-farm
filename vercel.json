@@ -5,8 +5,12 @@
       "schedule": "0 10 * * *"
     },
     {
-      "path": "/api/cron/autopilot",
+      "path": "/api/cron/autopilot?business=callbird",
       "schedule": "0 13 * * 1-5"
+    },
+    {
+      "path": "/api/cron/autopilot?business=voiceai-connect",
+      "schedule": "0 15 * * 1-5"
     }
   ]
 }

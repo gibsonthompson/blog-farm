@@ -14,14 +14,15 @@ const MIN_QC_OVERALL = 7;
 const MIN_QC_INFO_GAIN = 6;
 
 /**
- * GET /api/cron/autopilot
+ * GET /api/cron/autopilot?business=callbird
+ * 
+ * Supports multiple businesses via query parameter.
+ * Defaults to 'callbird' for backwards compatibility.
  * 
  * Priority order each run:
  *   1. Retry approved posts (cadence-blocked last time)
  *   2. Phase 2: template + QC + publish a draft (pipeline_step = 1)
  *   3. Phase 1: pick topic + research + write a new draft
- * 
- * SMS notifications sent when posts need manual review.
  */
 export async function GET(request) {
   const authHeader = request.headers.get('authorization');
@@ -29,14 +30,15 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const businessSlug = 'callbird';
+  const { searchParams } = new URL(request.url);
+  const businessSlug = searchParams.get('business') || 'callbird';
   const startTime = Date.now();
-  const log = { timestamp: new Date().toISOString(), steps: [], result: null };
+  const log = { timestamp: new Date().toISOString(), business: businessSlug, steps: [], result: null };
 
   try {
     const { data: biz } = await supabase
       .from('blog_businesses').select('*').eq('slug', businessSlug).single();
-    if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
+    if (!biz) return NextResponse.json({ error: `Business "${businessSlug}" not found` }, { status: 404 });
 
     // PRIORITY 1: Retry approved posts (were cadence-blocked)
     const { data: approved } = await supabase
@@ -49,37 +51,37 @@ export async function GET(request) {
       .maybeSingle();
 
     if (approved) {
-      log.steps.push({ step: 'retry_publish', postId: approved.id, title: approved.title });
+      log.steps.push({ step: 'retry_approved', postId: approved.id, title: approved.title });
       try {
         const pubResult = await publishPost(approved.id);
         if (pubResult.blocked) {
           log.result = 'still_cadence_blocked';
-          log.steps.push({ step: 'publish', status: 'blocked' });
+          log.steps.push({ step: 'publish', status: 'still_blocked' });
         } else {
-          log.result = 'published';
+          log.result = 'retry_published';
           log.steps.push({ step: 'publish', status: 'success' });
         }
       } catch (err) {
-        log.result = 'retry_publish_error';
+        log.result = 'retry_error';
         log.steps.push({ step: 'publish', error: err.message });
       }
       return NextResponse.json({ success: true, ...log });
     }
 
-    // PRIORITY 2: Phase 2 — finish a draft
+    // PRIORITY 2: Phase 2 — process existing draft
     const { data: draft } = await supabase
       .from('blog_generated_posts')
       .select('*')
       .eq('business_id', biz.id)
-      .eq('status', 'pending')
       .eq('pipeline_step', 1)
+      .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
 
     if (draft) {
-      log.steps.push({ step: 'phase', value: 2, postId: draft.id, title: draft.title });
-      return await runPhase2(draft, biz, log, startTime);
+      log.steps.push({ step: 'phase', value: 2, postId: draft.id });
+      return await runPhase2(draft, biz, businessSlug, log, startTime);
     }
 
     // PRIORITY 3: Phase 1 — start a new post
@@ -89,16 +91,13 @@ export async function GET(request) {
   } catch (err) {
     log.result = 'fatal_error';
     log.steps.push({ step: 'fatal', error: err.message });
-
-    await sendSms(`🚨 Blog autopilot FATAL ERROR:\n${err.message.substring(0, 150)}`);
-
+    await sendSms(`🚨 Blog autopilot FATAL ERROR (${businessSlug}):\n${err.message.substring(0, 150)}`);
     return NextResponse.json({ error: err.message, ...log }, { status: 500 });
   }
 }
 
 /**
  * PHASE 1: Pick topic → Research → Write → save as "draft"
- * ~3 Claude calls, ~90-150s
  */
 async function runPhase1(biz, businessSlug, log, startTime) {
   // ── Pick topic ──
@@ -124,7 +123,7 @@ async function runPhase1(biz, businessSlug, log, startTime) {
         log.result = 'no_topics';
         return NextResponse.json({ success: true, ...log });
       }
-      targetKeyword = rec.keyword || rec.title;
+      targetKeyword = rec.target_keyword || rec.keyword || rec.title;
       postType = rec.post_type || 'guide';
       log.steps.push({ step: 'topic', source: 'ai', keyword: targetKeyword });
     } catch (err) {
@@ -134,10 +133,11 @@ async function runPhase1(biz, businessSlug, log, startTime) {
     }
   }
 
-  // ── Research (skip Claude dedup — use word matching only to save time) ──
+  // ── Research ──
   let research;
   try {
-    research = await runResearch(targetKeyword, postType);
+    const { data: brandKit } = await supabase.from('blog_brand_kits').select('*').eq('business_id', biz.id).single();
+    research = await runResearch(targetKeyword, postType, biz, brandKit);
     log.steps.push({ step: 'research', status: 'success', elapsed: `${Date.now() - startTime}ms` });
   } catch (err) {
     log.result = 'research_error';
@@ -148,7 +148,6 @@ async function runPhase1(biz, businessSlug, log, startTime) {
   // ── Create post record ──
   const baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 80);
 
-  // Clean up old failed attempts with same slug
   const { data: existing } = await supabase
     .from('blog_generated_posts').select('id, status')
     .eq('business_id', biz.id).eq('slug', baseSlug);
@@ -176,12 +175,11 @@ async function runPhase1(biz, businessSlug, log, startTime) {
 
   // ── Write ──
   try {
-    const { brandKit, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
-    const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, '', referencePosts);
+    const { business: bizCtx, brandKit, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
+    const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, '', referencePosts, bizCtx);
 
     if (!contentOutput || contentOutput.length < 500) throw new Error('Content too short');
 
-    // Save content and mark as ready for Phase 2
     await supabase.from('blog_generated_posts').update({
       html_content: contentOutput,
       word_count: contentOutput.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length,
@@ -208,65 +206,101 @@ async function runPhase1(biz, businessSlug, log, startTime) {
 
 /**
  * PHASE 2: Template → QC → Quality Gate → Publish
- * ~2 Claude calls + GitHub, ~60-90s
+ * Branches on publish_mode: static (CallBird) vs nextjs (VoiceAI Connect)
  */
-async function runPhase2(draft, biz, log, startTime) {
+async function runPhase2(draft, biz, businessSlug, log, startTime) {
   const postId = draft.id;
   const contentOutput = draft.html_content;
   const promptData = JSON.parse(draft.generation_prompt || '{}');
+  const publishMode = biz.publish_mode || 'static';
 
   // ── Template + Validate ──
   let metadata;
   try {
-    const templateResult = await wrapInTemplate(contentOutput, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix);
-    metadata = templateResult.metadata;
+    if (publishMode === 'nextjs') {
+      // NEXTJS MODE: Extract metadata + raw article body (no HTML wrapping)
+      const metaMatch = contentOutput.match(/<metadata>\s*([\s\S]*?)\s*<\/metadata>/);
+      if (metaMatch) {
+        try { metadata = JSON.parse(metaMatch[1].replace(/```json\n?|```/g, '').trim()); }
+        catch { metadata = { title: draft.title, slug: draft.slug, meta_description: '', primary_keyword: draft.primary_keyword }; }
+      } else {
+        metadata = { title: draft.title, slug: draft.slug, meta_description: '', primary_keyword: draft.primary_keyword };
+      }
 
-    const { data: allExisting } = await supabase.from('blog_existing_posts').select('slug').eq('business_id', biz.id);
-    const existingSlugs = (allExisting || []).map(p => p.slug);
+      const contentMatch = contentOutput.match(/<content>\s*([\s\S]*?)\s*<\/content>/);
+      let html = contentMatch ? contentMatch[1].trim() : contentOutput.replace(/<metadata>[\s\S]*?<\/metadata>/, '').trim();
 
-    const html = sanitizeGeneratedHtml(templateResult.html, existingSlugs);
-    const validation = validatePost(html, metadata, existingSlugs);
+      // Strip accidental full-page wrapper
+      html = html.replace(/<!DOCTYPE[^>]*>/gi, '').replace(/<\/?html[^>]*>/gi, '')
+        .replace(/<head>[\s\S]*?<\/head>/gi, '').replace(/<\/?body[^>]*>/gi, '').trim();
 
-    if (!validation.valid) {
+      // Fix internal link format: convert blog-{slug}.html → /blog/{slug} for nextjs
+      html = html.replace(/href="blog-([^"]+)\.html"/gi, 'href="/blog/$1"');
+
+      const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
+
       await supabase.from('blog_generated_posts').update({
-        title: metadata.title, slug: metadata.slug, html_content: html,
-        status: 'revision_needed',
-        qc_notes: JSON.stringify({ validation_errors: validation.errors }),
+        title: metadata.title, slug: metadata.slug,
+        meta_description: metadata.meta_description,
+        primary_keyword: metadata.primary_keyword,
+        secondary_keywords: metadata.secondary_keywords || [],
+        read_time: metadata.read_time, emoji: metadata.emoji,
+        excerpt: metadata.excerpt, html_content: html,
+        word_count: wordCount,
       }).eq('id', postId);
 
-      log.result = 'validation_failed';
-      log.steps.push({ step: 'template', errors: validation.errors });
+      log.steps.push({ step: 'template', status: 'success', mode: 'nextjs', title: metadata.title, elapsed: `${Date.now() - startTime}ms` });
 
-      await sendSms(`❌ Blog post validation failed:\n"${metadata.title}"\nErrors: ${validation.errors.slice(0, 3).map(e => e.message || e).join(', ')}\nhttps://blog-farm.vercel.app`);
+    } else {
+      // STATIC MODE: Full HTML template wrapping (CallBird)
+      const templateResult = await wrapInTemplate(contentOutput, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix);
+      metadata = templateResult.metadata;
 
-      return NextResponse.json({ success: true, ...log });
+      const { data: allExisting } = await supabase.from('blog_existing_posts').select('slug').eq('business_id', biz.id);
+      const existingSlugs = (allExisting || []).map(p => p.slug);
+
+      const html = sanitizeGeneratedHtml(templateResult.html, existingSlugs);
+      const validation = validatePost(html, metadata, existingSlugs, biz);
+
+      if (!validation.valid) {
+        await supabase.from('blog_generated_posts').update({
+          title: metadata.title, slug: metadata.slug, html_content: html,
+          status: 'revision_needed',
+          qc_notes: JSON.stringify({ validation_errors: validation.errors }),
+        }).eq('id', postId);
+
+        log.result = 'validation_failed';
+        log.steps.push({ step: 'template', errors: validation.errors });
+        await sendSms(`❌ Blog post validation failed (${businessSlug}):\n"${metadata.title}"\nErrors: ${validation.errors.slice(0, 3).map(e => e.message || e).join(', ')}`);
+        return NextResponse.json({ success: true, ...log });
+      }
+
+      await supabase.from('blog_generated_posts').update({
+        title: metadata.title, slug: metadata.slug,
+        meta_description: metadata.meta_description,
+        primary_keyword: metadata.primary_keyword,
+        secondary_keywords: metadata.secondary_keywords || [],
+        read_time: metadata.read_time, emoji: metadata.emoji,
+        excerpt: metadata.excerpt, html_content: html,
+        word_count: html.replace(/<[^>]*>/g, ' ').split(/\s+/).length,
+      }).eq('id', postId);
+
+      log.steps.push({ step: 'template', status: 'success', mode: 'static', title: metadata.title, elapsed: `${Date.now() - startTime}ms` });
     }
 
-    await supabase.from('blog_generated_posts').update({
-      title: metadata.title, slug: metadata.slug,
-      meta_description: metadata.meta_description,
-      primary_keyword: metadata.primary_keyword,
-      secondary_keywords: metadata.secondary_keywords || [],
-      read_time: metadata.read_time, emoji: metadata.emoji,
-      excerpt: metadata.excerpt, html_content: html,
-      word_count: html.replace(/<[^>]*>/g, ' ').split(/\s+/).length,
-    }).eq('id', postId);
-
-    // Track attributes (non-blocking)
+    // Track attributes (shared, non-blocking)
     try {
-      const attrs = extractContentAttributes(html, metadata, null);
+      const { data: postData } = await supabase.from('blog_generated_posts').select('html_content').eq('id', postId).single();
+      const attrs = extractContentAttributes(postData.html_content, metadata, null);
       attrs.post_id = postId;
       await supabase.from('blog_post_attributes').upsert(attrs, { onConflict: 'post_id' });
     } catch { /* skip */ }
 
-    log.steps.push({ step: 'template', status: 'success', title: metadata.title, elapsed: `${Date.now() - startTime}ms` });
   } catch (err) {
     log.result = 'template_error';
     log.steps.push({ step: 'template', error: err.message });
     await supabase.from('blog_generated_posts').update({ status: 'failed' }).eq('id', postId);
-
-    await sendSms(`❌ Blog autopilot template error:\n${err.message.substring(0, 100)}\nhttps://blog-farm.vercel.app`);
-
+    await sendSms(`❌ Blog autopilot template error (${businessSlug}):\n${err.message.substring(0, 100)}`);
     return NextResponse.json({ success: false, ...log });
   }
 
@@ -295,9 +329,7 @@ async function runPhase2(draft, biz, log, startTime) {
     log.result = 'qc_error';
     log.steps.push({ step: 'qc', error: err.message });
     await supabase.from('blog_generated_posts').update({ status: 'revision_needed' }).eq('id', postId);
-
-    await sendSms(`❌ Blog autopilot QC error:\n${err.message.substring(0, 100)}\nhttps://blog-farm.vercel.app`);
-
+    await sendSms(`❌ Blog autopilot QC error (${businessSlug}):\n${err.message.substring(0, 100)}`);
     return NextResponse.json({ success: false, ...log });
   }
 
@@ -320,16 +352,13 @@ async function runPhase2(draft, biz, log, startTime) {
       : hasHallucinations ? 'Hallucination flags' : 'Business protection flags';
 
     await supabase.from('blog_generated_posts').update({
-      status: 'pending',
-      pipeline_step: 2,
+      status: 'pending', pipeline_step: 2,
       qc_notes: JSON.stringify({ scores: qcResult.scores, held_reason: reason }),
     }).eq('id', postId);
 
     log.result = 'held_for_review';
     log.steps.push({ step: 'quality_gate', decision: 'HOLD', reason });
-
-    await sendSms(`⚠️ Blog post needs review:\n"${draft.title.replace('[Generating] ', '')}"\nReason: ${reason}\nScores: ${overall}/10 overall\nhttps://blog-farm.vercel.app`);
-
+    await sendSms(`⚠️ Blog post needs review (${businessSlug}):\n"${metadata.title}"\nReason: ${reason}\nScores: ${overall}/10`);
     return NextResponse.json({ success: true, ...log });
   }
 
@@ -349,7 +378,6 @@ async function runPhase2(draft, biz, log, startTime) {
     log.result = 'published';
     log.steps.push({ step: 'publish', status: 'success', elapsed: `${Date.now() - startTime}ms` });
 
-    // Update queue if this came from there
     if (promptData.queueId) {
       await supabase.from('blog_content_queue').update({ status: 'published' }).eq('id', promptData.queueId);
     }
@@ -357,8 +385,7 @@ async function runPhase2(draft, biz, log, startTime) {
     log.result = 'publish_error';
     log.steps.push({ step: 'publish', error: err.message });
     await supabase.from('blog_generated_posts').update({ status: 'approved' }).eq('id', postId);
-
-    await sendSms(`❌ Blog publish failed:\n"${draft.title.replace('[Generating] ', '')}"\n${err.message.substring(0, 100)}\nhttps://blog-farm.vercel.app`);
+    await sendSms(`❌ Blog publish failed (${businessSlug}):\n"${metadata.title}"\n${err.message.substring(0, 100)}`);
   }
 
   await supabase.from('blog_generation_logs').insert({

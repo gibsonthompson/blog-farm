@@ -16,18 +16,23 @@ export async function generateRssFeed(businessId) {
 
   const { data: posts } = await supabase
     .from('blog_existing_posts')
-    .select('title, slug, meta_description, publish_date, category')
+    .select('title, slug, meta_description, publish_date, category, status')
     .eq('business_id', businessId)
     .order('publish_date', { ascending: false });
 
   if (!posts || posts.length === 0) return null;
+
+  // Filter out unpublished/noindexed posts
+  const livePosts = posts.filter(p => !p.status || !['noindexed', 'removed'].includes(p.status));
+
+  if (livePosts.length === 0) return null;
 
   const domain = biz.domain;
   const siteUrl = `https://${domain}`;
   const prefix = biz.blog_file_prefix || 'blog-';
   const now = new Date().toUTCString();
 
-  const items = posts.map(post => {
+  const items = livePosts.map(post => {
     const postUrl = `${siteUrl}/${prefix}${post.slug}`;
     const pubDate = post.publish_date
       ? new Date(post.publish_date).toUTCString()
@@ -40,7 +45,7 @@ export async function generateRssFeed(businessId) {
       <guid isPermaLink="true">${postUrl}</guid>
       <pubDate>${pubDate}</pubDate>
       <description>${desc}</description>
-      <author>gibson@callbirdai.com (Gibson Thompson)</author>${post.category ? `
+      <author>support@${domain} (Gibson Thompson)</author>${post.category ? `
       <category>${escapeXml(post.category)}</category>` : ''}
     </item>`;
   }).join('\n');
@@ -49,17 +54,12 @@ export async function generateRssFeed(businessId) {
 <rss version="2.0"
   xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>CallBird AI Blog</title>
+    <title>${escapeXml(biz.name)} Blog</title>
     <link>${siteUrl}/blog</link>
-    <description>Expert guides, industry insights, and everything about AI receptionists for small businesses.</description>
+    <description>Expert guides, industry insights, and resources from ${escapeXml(biz.name)}.</description>
     <language>en-us</language>
     <lastBuildDate>${now}</lastBuildDate>
     <atom:link href="${siteUrl}/feed.xml" rel="self" type="application/rss+xml"/>
-    <image>
-      <url>https://i.imgur.com/qwyQQW5.png</url>
-      <title>CallBird AI Blog</title>
-      <link>${siteUrl}</link>
-    </image>
 ${items}
   </channel>
 </rss>`;
