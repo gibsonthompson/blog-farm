@@ -257,6 +257,10 @@ async function handleTemplate(body, businessSlug) {
       // Fix internal link format: convert blog-{slug}.html → /blog/{slug} for nextjs
       html = html.replace(/href="blog-([^"]+)\.html"/gi, 'href="/blog/$1"');
 
+      // Strip self-review checklist if Claude included it in the content
+      html = html.replace(/\*\*STATISTICS CHECK[\s\S]*$/, '').trim();
+      html = html.replace(/<self_review>[\s\S]*?<\/self_review>/gi, '').trim();
+
       wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
 
     } else {
@@ -492,6 +496,8 @@ async function handleFull(body, businessSlug) {
       html = html.replace(/<!DOCTYPE[^>]*>/gi, '').replace(/<\/?html[^>]*>/gi, '')
         .replace(/<head>[\s\S]*?<\/head>/gi, '').replace(/<\/?body[^>]*>/gi, '').trim();
       html = html.replace(/href="blog-([^"]+)\.html"/gi, 'href="/blog/$1"');
+      html = html.replace(/\*\*STATISTICS CHECK[\s\S]*$/, '').trim();
+      html = html.replace(/<self_review>[\s\S]*?<\/self_review>/gi, '').trim();
       wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
     } else {
       const result = await wrapInTemplate(contentOutput, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix);

@@ -237,6 +237,10 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
       // Fix internal link format: convert blog-{slug}.html → /blog/{slug} for nextjs
       html = html.replace(/href="blog-([^"]+)\.html"/gi, 'href="/blog/$1"');
 
+      // Strip self-review checklist if Claude included it
+      html = html.replace(/\*\*STATISTICS CHECK[\s\S]*$/, '').trim();
+      html = html.replace(/<self_review>[\s\S]*?<\/self_review>/gi, '').trim();
+
       const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
 
       await supabase.from('blog_generated_posts').update({

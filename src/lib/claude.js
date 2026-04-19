@@ -372,7 +372,9 @@ Make your H2 opening paragraphs naturally concise and quotable — an AI engine 
 </content>
 
 <self_review>
-BEFORE outputting your final response, mentally review against these checks:
+BEFORE outputting your final response, mentally review against these checks.
+DO NOT include this review in your output. It is for your internal validation ONLY.
+The <content> block must contain ONLY the blog post HTML — no review notes, no checklists, no statistics checks.
 
 STATISTICS CHECK:
 1. Every percentage and dollar figure — did it come from VERIFIED STATISTICS? If not, remove or rewrite qualitatively.
