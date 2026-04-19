@@ -32,6 +32,7 @@ export async function POST(request) {
       case 'write': return await handleWrite(body, businessSlug);
       case 'template': return await handleTemplate(body, businessSlug);
       case 'qc': return await handleQC(body, businessSlug);
+      case 'full': return await handleFull(body, businessSlug);
       default: return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
   } catch (err) {
@@ -398,5 +399,179 @@ async function handleQC(body, businessSlug) {
   } catch (err) {
     console.error(`[blog-farm] Step 4 error:`, err);
     return NextResponse.json({ error: `QC step failed: ${err.message}` }, { status: 500 });
+  }
+}
+
+// ── FULL PIPELINE: Research → Write → Template → QC in one call ──
+
+async function handleFull(body, businessSlug) {
+  const { targetKeyword, postType, notes } = body;
+  if (!targetKeyword) return NextResponse.json({ error: 'targetKeyword is required' }, { status: 400 });
+  if (!postType) return NextResponse.json({ error: 'postType is required' }, { status: 400 });
+
+  const startTime = Date.now();
+  const steps = [];
+
+  try {
+    // Load business
+    const { data: biz } = await supabase
+      .from('blog_businesses').select('*').eq('slug', businessSlug).single();
+    if (!biz) return NextResponse.json({ error: `Business "${businessSlug}" not found` }, { status: 404 });
+
+    const publishMode = biz.publish_mode || 'static';
+
+    // ── STEP 1: Dedup + Research ──
+    const preCheck = await validateKeywordUniqueness(biz.id, targetKeyword, postType);
+    if (!preCheck.safe) {
+      return NextResponse.json({
+        success: false, blocked: true, stage: 'pre_generation',
+        error: preCheck.reason, conflicts: preCheck.conflicts,
+      }, { status: 409 });
+    }
+
+    const { data: brandKit } = await supabase
+      .from('blog_brand_kits').select('*').eq('business_id', biz.id).single();
+
+    const research = await runResearch(targetKeyword, postType, biz, brandKit);
+    steps.push({ step: 'research', status: 'success', verifiedStats: (research.verified_statistics || []).length, gaps: (research.content_gaps || []).length, elapsed: `${Date.now() - startTime}ms` });
+
+    // Create post record
+    const baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').substring(0, 80);
+
+    // Clean up old failed attempts
+    const { data: existingRecords } = await supabase.from('blog_generated_posts')
+      .select('id, title, status').eq('business_id', biz.id).eq('slug', baseSlug);
+    if (existingRecords?.length) {
+      const live = existingRecords.filter(r => ['published', 'approved'].includes(r.status));
+      if (live.length) {
+        return NextResponse.json({ error: `Slug "${baseSlug}" already exists: "${live[0].title}" (${live[0].status})` }, { status: 409 });
+      }
+      const deadIds = existingRecords.filter(r => !['published', 'approved'].includes(r.status)).map(r => r.id);
+      if (deadIds.length) {
+        await supabase.from('blog_generation_logs').delete().in('post_id', deadIds);
+        await supabase.from('blog_generated_posts').delete().in('id', deadIds);
+      }
+    }
+
+    const { data: post } = await supabase.from('blog_generated_posts').insert({
+      business_id: biz.id, title: `[Generating] ${targetKeyword}`, slug: baseSlug,
+      primary_keyword: targetKeyword, category: postType,
+      html_content: '<p>Generating...</p>', status: 'pending',
+      generation_prompt: JSON.stringify({ research, notes: notes || '', targetKeyword, postType }),
+      word_count: 0,
+    }).select().single();
+
+    const postId = post.id;
+
+    // ── STEP 2: Write ──
+    const { business: bizCtx, brandKit: bk, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
+    const contentOutput = await writeContent(bk, existingPosts, research, postType, targetKeyword, notes || '', referencePosts, bizCtx);
+
+    if (!contentOutput || contentOutput.length < 100) {
+      return NextResponse.json({ error: `Content too short (${(contentOutput || '').length} chars)` }, { status: 500 });
+    }
+
+    await supabase.from('blog_generated_posts').update({
+      html_content: contentOutput, updated_at: new Date().toISOString(),
+    }).eq('id', postId);
+
+    steps.push({ step: 'write', status: 'success', contentLength: contentOutput.length, elapsed: `${Date.now() - startTime}ms` });
+
+    // ── STEP 3: Template ──
+    const { data: allExisting } = await supabase.from('blog_existing_posts').select('slug').eq('business_id', biz.id);
+    const existingSlugs = (allExisting || []).map(p => p.slug);
+    let metadata, html, wordCount;
+
+    if (publishMode === 'nextjs') {
+      const metaMatch = contentOutput.match(/<metadata>\s*([\s\S]*?)\s*<\/metadata>/);
+      metadata = metaMatch ? (() => { try { return JSON.parse(metaMatch[1].replace(/```json\n?|```/g, '').trim()); } catch { return { title: targetKeyword, slug: baseSlug, meta_description: '', primary_keyword: targetKeyword }; } })()
+        : { title: targetKeyword, slug: baseSlug, meta_description: '', primary_keyword: targetKeyword };
+
+      const contentMatch = contentOutput.match(/<content>\s*([\s\S]*?)\s*<\/content>/);
+      html = contentMatch ? contentMatch[1].trim() : contentOutput.replace(/<metadata>[\s\S]*?<\/metadata>/, '').trim();
+      html = html.replace(/<!DOCTYPE[^>]*>/gi, '').replace(/<\/?html[^>]*>/gi, '')
+        .replace(/<head>[\s\S]*?<\/head>/gi, '').replace(/<\/?body[^>]*>/gi, '').trim();
+      html = html.replace(/href="blog-([^"]+)\.html"/gi, 'href="/blog/$1"');
+      wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
+    } else {
+      const result = await wrapInTemplate(contentOutput, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix);
+      metadata = result.metadata;
+      html = sanitizeGeneratedHtml(result.html, existingSlugs);
+      wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
+
+      const validation = validatePost(html, metadata, existingSlugs);
+      if (!validation.valid) {
+        await supabase.from('blog_generated_posts').update({
+          title: metadata.title, slug: metadata.slug, html_content: html,
+          word_count: wordCount, status: 'revision_needed',
+          qc_notes: JSON.stringify({ validation_errors: validation.errors }),
+          updated_at: new Date().toISOString(),
+        }).eq('id', postId);
+        return NextResponse.json({
+          success: true, postId, steps,
+          validation: { valid: false, errors: validation.errors },
+          post: { title: metadata.title, slug: metadata.slug, word_count: wordCount, status: 'revision_needed' },
+        });
+      }
+    }
+
+    // Save template result
+    await supabase.from('blog_generated_posts').update({
+      title: metadata.title, slug: metadata.slug,
+      meta_description: metadata.meta_description,
+      primary_keyword: metadata.primary_keyword,
+      secondary_keywords: metadata.secondary_keywords || [],
+      read_time: metadata.read_time, emoji: metadata.emoji,
+      excerpt: metadata.excerpt, html_content: html, word_count: wordCount,
+      updated_at: new Date().toISOString(),
+    }).eq('id', postId);
+
+    // Post-dedup check
+    const postCheck = await validatePostUniqueness(biz.id, metadata.title, metadata.primary_keyword, metadata.slug);
+    if (!postCheck.unique) {
+      await supabase.from('blog_generated_posts').update({
+        status: 'revision_needed',
+        qc_notes: JSON.stringify({ dedup_conflicts: postCheck.conflicts }),
+      }).eq('id', postId);
+      return NextResponse.json({
+        success: true, postId, steps,
+        dedup: { unique: false, recommendation: postCheck.recommendation },
+        post: { title: metadata.title, slug: metadata.slug, word_count: wordCount },
+      });
+    }
+
+    steps.push({ step: 'template', status: 'success', mode: publishMode, wordCount, elapsed: `${Date.now() - startTime}ms` });
+
+    // ── STEP 4: QC ──
+    const qcResult = await runQualityControl(postId, biz, bk);
+
+    try {
+      await supabase.from('blog_post_attributes').upsert({
+        post_id: postId,
+        qc_overall: qcResult.scores?.overall || null,
+        qc_info_gain: qcResult.scores?.information_gain || null,
+        qc_aeo: qcResult.scores?.aeo_readiness || null,
+      }, { onConflict: 'post_id' });
+    } catch { /* non-blocking */ }
+
+    steps.push({ step: 'qc', status: 'success', verdict: qcResult.verdict, overall: qcResult.scores?.overall, elapsed: `${Date.now() - startTime}ms` });
+
+    const { data: finalPost } = await supabase
+      .from('blog_generated_posts').select('title, slug, status, word_count').eq('id', postId).single();
+
+    return NextResponse.json({
+      success: true, postId, steps,
+      totalDuration: `${Date.now() - startTime}ms`,
+      post: { title: finalPost.title, slug: finalPost.slug, status: finalPost.status, word_count: finalPost.word_count },
+      qc: {
+        verdict: qcResult.verdict, scores: qcResult.scores,
+        issues: qcResult.issues, suggestions: qcResult.suggestions,
+        hallucination_flags: qcResult.hallucination_flags || [],
+        business_protection_flags: qcResult.business_protection_flags || [],
+      },
+    });
+  } catch (err) {
+    console.error(`[blog-farm] Full pipeline error:`, err);
+    return NextResponse.json({ error: err.message, steps, elapsed: `${Date.now() - startTime}ms` }, { status: 500 });
   }
 }
