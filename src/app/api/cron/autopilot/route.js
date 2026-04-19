@@ -341,19 +341,21 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
   const overall = qcResult.scores?.overall || 0;
   const infoGain = qcResult.scores?.information_gain || 0;
   const hasHallucinations = (qcResult.hallucination_flags?.length || 0) > 0;
-  const hasBusinessFlags = (qcResult.business_protection_flags?.length || 0) > 0;
 
   const shouldPublish =
     overall >= MIN_QC_OVERALL &&
     infoGain >= MIN_QC_INFO_GAIN &&
     !hasHallucinations &&
-    !hasBusinessFlags &&
+    (qcResult.business_protection_flags?.length || 0) <= 1 &&
     qcResult.verdict !== 'reject';
 
   if (!shouldPublish) {
+    const bizFlagCount = qcResult.business_protection_flags?.length || 0;
     const reason = overall < MIN_QC_OVERALL ? `QC ${overall} < ${MIN_QC_OVERALL}`
       : infoGain < MIN_QC_INFO_GAIN ? `Info gain ${infoGain} < ${MIN_QC_INFO_GAIN}`
-      : hasHallucinations ? 'Hallucination flags' : 'Business protection flags';
+      : hasHallucinations ? 'Hallucination flags'
+      : bizFlagCount > 1 ? `${bizFlagCount} business protection flags`
+      : 'QC verdict: reject';
 
     await supabase.from('blog_generated_posts').update({
       status: 'pending', pipeline_step: 2,
