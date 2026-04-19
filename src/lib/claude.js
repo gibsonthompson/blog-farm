@@ -368,7 +368,19 @@ Use class="faq-section" with class="faq-item" for FAQs at the end.
 Internal links as <a href="${linkPrefix}slug-here${linkSuffix}">descriptive anchor text</a>.
 Service page links as <a href="${serviceBaseUrl}/path">anchor text</a>.
 
-Make your H2 opening paragraphs naturally concise and quotable — an AI engine should be able to extract the first 2 sentences under any H2 as a standalone answer.
+AEO STRUCTURAL REQUIREMENTS — these maximize AI engine citation probability:
+
+1. ANSWER BLOCKS: The first 1-2 sentences under EVERY H2 must be a standalone, quotable 40-60 word answer to the question implied by the heading. AI engines extract these first sentences to generate answers. If your opening is vague context-setting, the engine skips to a competitor.
+
+2. ENTITY CLARITY: The first 200 words of the article must clearly establish: what the topic is, who it's for, what it costs or saves, and where the reader should take action. AI engines use the first 30% of content for 55% of citations.
+
+3. STATISTICS DENSITY: Aim for 2+ specific data points per 300 words. Every statistic must come from the VERIFIED STATISTICS list or be calculated from real pricing. Sections with 3+ stats per 300 words achieve 2x higher AI citation rates than sections with zero stats.
+
+4. COMPARISON TABLES: For any post comparing options, place an HTML comparison table near the top (after the first section, before the deep dive). AI engines extract pre-formatted tables directly. Keep cells under 20 words.
+
+5. FAQ ANSWERS: Each FAQ answer must work if quoted completely out of context by an AI engine. Start with a direct answer, then add supporting detail. Never start a FAQ answer with "Yes" or "No" alone — start with the substantive answer.
+
+6. PRECISION: Use precise numbers ("94.6%") not rounded estimates ("about 95%") when citing verified statistics. Precision signals reliability to AI citation systems. For your own calculations, show the exact math.
 </content>
 
 <self_review>

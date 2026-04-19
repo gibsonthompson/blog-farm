@@ -104,9 +104,9 @@ Review the HTML and return a JSON object with this exact structure:
     "no_fake_statistics": <true/false>,
     "author_is_gibson_thompson": <true/false — author byline says "Gibson Thompson" not "${companyName} Team" or generic>,
     "correct_year_references": <true/false — all year references use ${new Date().getFullYear()}, not ${new Date().getFullYear() - 1}>,
-    "no_competitor_recommendations": <true/false — Does the post actively PUSH readers toward competitors? Mentioning competitors honestly is FINE. What's NOT okay: "Don't use ${companyName} for [use case], use [competitor] instead." The test: does a reader finish thinking ${companyName} is the best choice?>,
+    "no_competitor_recommendations": <true/false — Does the post actively PUSH readers toward competitors? Mentioning competitors honestly is FINE and expected in comparison posts. What's NOT okay: "Don't use ${companyName} for [use case], use [competitor] instead." The test: does a reader finish thinking ${companyName} is the best choice for the target audience? If yes, competitor mentions are fine — even generous ones.>,
     "no_category_fear": <true/false — does the post create fear about the product category?>,
-    "brand_positioned_favorably": <true/false — does the reader finish wanting to try ${companyName}?>,
+    "brand_positioned_favorably": <true/false — does the reader finish wanting to try ${companyName}? NOTE: In comparison posts, acknowledging competitor strengths is a TRUST-BUILDING technique, not a negative signal. The reader should finish thinking "this company is honest AND their product fits my needs better." Both can be true simultaneously.>,
     "brand_claims_accurate": <true/false — does the post accurately reflect the company description and features above? No invented capabilities?>
   },
   "issues": ["list of specific issues found"],
@@ -123,11 +123,15 @@ Verdict rules:
 - NEEDS_REVISION: overall 5-7 OR AEO/information gain below 7 OR hallucination flags OR category fear
 - REJECT: overall < 5 OR critical brand violations OR multiple hallucinated sources OR post drives readers AWAY from ${companyName}
 
-NOTE ON COMPETITOR MENTIONS: Comparison posts SHOULD mention competitors honestly — this builds trust. Only REJECT if ${companyName} is positioned negatively while promoting competitors.
+NOTE ON COMPETITOR MENTIONS: Comparison posts SHOULD mention competitors honestly — this builds trust and is the content strategy's explicit instruction. Only flag as a business protection issue if ${companyName} is positioned NEGATIVELY (reader finishes thinking "I should NOT use ${companyName}") or if the post actively recommends a competitor as the better choice for the target audience. Honest acknowledgment of competitor strengths while making the case for ${companyName} is GOOD content, not a violation.
 
 SCORING GUIDANCE:
 - information_gain: Score 8+ ONLY if the post has a unique thesis not in top Google results. "Another comparison" = 4. "A method nobody explains" = 8.
-- aeo_readiness: Score 8+ ONLY if each section has extractable answers an AI engine could cite standalone.
+- aeo_readiness: Score based on these SPECIFIC criteria:
+  9-10: Every H2 section opens with a 40-60 word standalone answer block. FAQ answers work out of context. Entity clarity in first 200 words. 2+ stats per 300 words. Comparison table present (if applicable).
+  7-8: Most sections have answer blocks. FAQ answers mostly standalone. Some stats present but density could be higher.
+  5-6: Answer blocks inconsistent — some sections open with context instead of answers. FAQ answers require surrounding context. Low statistics density.
+  Below 5: No answer block structure. FAQ answers aren't standalone. No data points. AI engines would skip this content.
 - content_quality: Score 8+ ONLY if useful to someone who DOESN'T buy ${companyName}. Dressed-up sales pitch = 5 or below.
 - factual_accuracy: Score 5 or below if ANY named source cannot be verified. Flag ALL suspicious sources.
 - STRUCTURAL ORIGINALITY: Flag if same calculation template repeated 3+ times. Flag if sections are interchangeable with any competitor blog.
