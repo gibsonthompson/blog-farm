@@ -1,17 +1,23 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 
+const BUSINESSES = [
+  { slug: 'callbird', name: 'CallBird AI', color: '#F6B828', bg: '#122092', domain: 'callbirdai.com', linkFormat: 'static' },
+  { slug: 'voiceai-connect', name: 'VoiceAI Connect', color: '#10b981', bg: '#064E3B', domain: 'myvoiceaiconnect.com', linkFormat: 'nextjs' },
+];
+
 const STATUS_COLORS = {
   pending: { bg: '#FEF3C7', text: '#92400E', label: 'Pending Review' },
   approved: { bg: '#D1FAE5', text: '#065F46', label: 'Approved' },
   published: { bg: '#DBEAFE', text: '#1E40AF', label: 'Published' },
   rejected: { bg: '#FEE2E2', text: '#991B1B', label: 'Rejected' },
   revision_needed: { bg: '#FDE68A', text: '#78350F', label: 'Needs Revision' },
+  failed: { bg: '#FEE2E2', text: '#991B1B', label: 'Failed' },
 };
 
 const POST_TYPES = [
-  { value: 'industry', label: 'Industry Guide', desc: 'Best AI Receptionist for [Industry]' },
-  { value: 'comparison', label: 'Competitor Comparison', desc: 'CallBird vs [Competitor]' },
+  { value: 'industry', label: 'Industry Guide', desc: 'AI Receptionist for [Industry]' },
+  { value: 'comparison', label: 'Competitor Comparison', desc: 'vs [Competitor]' },
   { value: 'how-to', label: 'How-To Guide', desc: 'How to [Solve Problem]' },
   { value: 'statistics', label: 'Statistics & Data', desc: 'Data-driven post with numbers' },
   { value: 'guide', label: 'Comprehensive Guide', desc: 'Definitive resource on a topic' },
@@ -19,7 +25,17 @@ const POST_TYPES = [
   { value: 'about', label: 'Brand / AEO', desc: 'AEO-optimized brand awareness' },
 ];
 
+// Estimated costs per step (Sonnet 4: $3/1M in, $15/1M out)
+const STEP_COSTS = {
+  research: { est: 0.05, label: 'Research + Web Search' },
+  write: { est: 0.35, label: 'Write Content + Thinking' },
+  template_static: { est: 0.25, label: 'HTML Template Wrap' },
+  template_nextjs: { est: 0.00, label: 'Metadata Extract (no API)' },
+  qc: { est: 0.15, label: 'Quality Control + Thinking' },
+};
+
 export default function Dashboard() {
+  const [activeBiz, setActiveBiz] = useState(BUSINESSES[0]);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -30,15 +46,16 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [recs, setRecs] = useState(null);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [runCost, setRunCost] = useState(0);
 
-  // Form state
   const [keyword, setKeyword] = useState('');
-  const [postType, setPostType] = useState('industry');
+  const [postType, setPostType] = useState('guide');
   const [notes, setNotes] = useState('');
 
   const fetchPosts = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await fetch('/api/posts?business=callbird');
+      const res = await fetch(`/api/posts?business=${activeBiz.slug}`);
       const data = await res.json();
       setPosts(data.posts || []);
     } catch (e) {
@@ -46,15 +63,25 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeBiz.slug]);
 
-  useEffect(() => { fetchPosts(); }, [fetchPosts]);
+  useEffect(() => {
+    fetchPosts();
+    setRecs(null);
+    setGenResult(null);
+    setRunCost(0);
+  }, [fetchPosts]);
+
+  function switchBusiness(slug) {
+    const biz = BUSINESSES.find(b => b.slug === slug);
+    if (biz) setActiveBiz(biz);
+  }
 
   async function fetchRecommendations() {
     setRecsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/keywords?recommend=true&count=8&business=callbird');
+      const res = await fetch(`/api/keywords?recommend=true&count=8&business=${activeBiz.slug}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setRecs(data);
@@ -70,7 +97,7 @@ export default function Dashboard() {
     setPostType(rec.post_type);
     setNotes(rec.notes || '');
     setGenResult(null);
-    // Scroll to generate form
+    setRunCost(0);
     document.getElementById('generate-section')?.scrollIntoView({ behavior: 'smooth' });
   }
 
@@ -80,14 +107,14 @@ export default function Dashboard() {
     const res = await fetch('/api/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, businessSlug: 'callbird', ...body }),
+      body: JSON.stringify({ action, businessSlug: activeBiz.slug, ...body }),
     });
     let data;
     try {
       const text = await res.text();
       data = JSON.parse(text);
     } catch {
-      throw new Error(`Step "${action}" returned invalid response (HTTP ${res.status}). Check Vercel function logs.`);
+      throw new Error(`Step "${action}" returned invalid response (HTTP ${res.status})`);
     }
     if (!res.ok) throw new Error(data.error || data.reason || `Step "${action}" failed (HTTP ${res.status})`);
     return data;
@@ -100,6 +127,8 @@ export default function Dashboard() {
     setError(null);
     setGenResult(null);
     setGenStep('');
+    setRunCost(0);
+    let totalCost = 0;
 
     try {
       // Step 1: Research
@@ -107,23 +136,33 @@ export default function Dashboard() {
       const step1 = await callStep('research', {
         targetKeyword: keyword.trim(), postType, notes: notes.trim(),
       });
+      totalCost += STEP_COSTS.research.est;
+      setRunCost(totalCost);
       const postId = step1.postId;
 
       // Step 2: Write content
-      setGenStep(`✍️ Writing content (${step1.research?.verifiedStats || 0} verified stats found)...`);
+      setGenStep(`✍️ Writing content (${step1.research?.verifiedStats || 0} verified stats, ${step1.research?.gaps || 0} gaps found)...`);
       await callStep('write', { postId });
+      totalCost += STEP_COSTS.write.est;
+      setRunCost(totalCost);
 
-      // Step 3: HTML template + validation
-      setGenStep('🏗️ Building HTML & running 25 validation checks...');
+      // Step 3: Template
+      const templateKey = activeBiz.linkFormat === 'nextjs' ? 'template_nextjs' : 'template_static';
+      setGenStep(activeBiz.linkFormat === 'nextjs' ? '📦 Extracting metadata...' : '🏗️ Building HTML & running validation...');
       const step3 = await callStep('template', { postId });
+      totalCost += STEP_COSTS[templateKey].est;
+      setRunCost(totalCost);
 
-      // If validation failed, show errors and stop
       if (step3.validation && !step3.validation.valid) {
-        setGenResult({
-          ...step3,
-          qc: null,
-          validationFailed: true,
-        });
+        setGenResult({ ...step3, qc: null, validationFailed: true, cost: totalCost });
+        setKeyword('');
+        setNotes('');
+        fetchPosts();
+        return;
+      }
+
+      if (step3.dedup && !step3.dedup.unique) {
+        setGenResult({ ...step3, qc: null, dedupFailed: true, cost: totalCost });
         setKeyword('');
         setNotes('');
         fetchPosts();
@@ -133,8 +172,10 @@ export default function Dashboard() {
       // Step 4: Quality control
       setGenStep('✅ Running quality control (32 checks)...');
       const step4 = await callStep('qc', { postId });
+      totalCost += STEP_COSTS.qc.est;
+      setRunCost(totalCost);
 
-      setGenResult(step4);
+      setGenResult({ ...step4, cost: totalCost });
       setKeyword('');
       setNotes('');
       fetchPosts();
@@ -150,7 +191,6 @@ export default function Dashboard() {
     if (!confirm('Publish this post? This will deploy to the live website.')) return;
     setPublishing(postId);
     setError(null);
-
     try {
       const res = await fetch('/api/approve', {
         method: 'POST',
@@ -192,22 +232,78 @@ export default function Dashboard() {
     }
   }
 
+  function getLiveUrl(post) {
+    if (activeBiz.linkFormat === 'nextjs') {
+      return `https://${activeBiz.domain}/blog/${post.slug}`;
+    }
+    return `https://${activeBiz.domain}/blog-${post.slug}.html`;
+  }
+
+  const publishedCount = posts.filter(p => p.status === 'published').length;
+  const pendingCount = posts.filter(p => ['pending', 'revision_needed'].includes(p.status)).length;
+
   return (
     <div style={styles.container}>
       {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerInner}>
-          <h1 style={styles.logo}>Blog Automation</h1>
-          <span style={styles.badge}>CallBird AI</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <h1 style={styles.logo}>Blog Automation</h1>
+            <div style={styles.bizSelector}>
+              {BUSINESSES.map(biz => (
+                <button
+                  key={biz.slug}
+                  onClick={() => switchBusiness(biz.slug)}
+                  style={{
+                    ...styles.bizTab,
+                    background: activeBiz.slug === biz.slug ? biz.bg : 'transparent',
+                    color: activeBiz.slug === biz.slug ? biz.color : '#64748B',
+                    borderColor: activeBiz.slug === biz.slug ? biz.color : '#334155',
+                  }}
+                >
+                  {biz.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 12, color: '#64748B', textAlign: 'right' }}>
+              <div>{activeBiz.domain}</div>
+              <div>{activeBiz.linkFormat === 'nextjs' ? 'Next.js ISR' : 'Static HTML'}</div>
+            </div>
+            <span style={{ ...styles.badge, background: activeBiz.bg, color: activeBiz.color }}>{activeBiz.name}</span>
+          </div>
         </div>
       </header>
 
       <main style={styles.main}>
+        {/* Quick Stats */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div style={styles.statBox}>
+            <div style={styles.statNum}>{posts.length}</div>
+            <div style={styles.statLabel}>Generated</div>
+          </div>
+          <div style={styles.statBox}>
+            <div style={{ ...styles.statNum, color: '#34D399' }}>{publishedCount}</div>
+            <div style={styles.statLabel}>Published</div>
+          </div>
+          <div style={styles.statBox}>
+            <div style={{ ...styles.statNum, color: '#FBBF24' }}>{pendingCount}</div>
+            <div style={styles.statLabel}>Pending</div>
+          </div>
+          {runCost > 0 && (
+            <div style={styles.statBox}>
+              <div style={{ ...styles.statNum, color: '#F87171' }}>${runCost.toFixed(2)}</div>
+              <div style={styles.statLabel}>Last Run Cost</div>
+            </div>
+          )}
+        </div>
+
         {/* AI Strategy Section */}
         <section style={styles.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h2 style={styles.cardTitle}>Content Strategy Brain</h2>
-            <button onClick={fetchRecommendations} style={styles.generateBtn} disabled={recsLoading}>
+            <h2 style={styles.cardTitle}>Content Strategy — {activeBiz.name}</h2>
+            <button onClick={fetchRecommendations} style={{ ...styles.generateBtn, background: activeBiz.bg }} disabled={recsLoading}>
               {recsLoading ? '⏳ Analyzing Gaps...' : '🧠 Get AI Recommendations'}
             </button>
           </div>
@@ -217,18 +313,20 @@ export default function Dashboard() {
               <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
                 <div style={styles.statBox}>
                   <div style={styles.statNum}>{recs.existingCount}</div>
-                  <div style={styles.statLabel}>Published Posts</div>
+                  <div style={styles.statLabel}>Total Posts</div>
                 </div>
-                <div style={styles.statBox}>
-                  <div style={styles.statNum}>{recs.totalOpportunities}</div>
-                  <div style={styles.statLabel}>Untapped Opportunities</div>
-                </div>
+                {recs.totalOpportunities !== null && (
+                  <div style={styles.statBox}>
+                    <div style={styles.statNum}>{recs.totalOpportunities}</div>
+                    <div style={styles.statLabel}>Gaps Found</div>
+                  </div>
+                )}
                 {recs.coverage && Object.entries(recs.coverage).map(([cat, data]) => (
                   <div key={cat} style={styles.statBox}>
-                    <div style={{ ...styles.statNum, color: data.coveragePercent > 60 ? '#34D399' : data.coveragePercent > 30 ? '#FBBF24' : '#F87171' }}>
+                    <div style={{ ...styles.statNum, fontSize: 18, color: data.coveragePercent > 60 ? '#34D399' : data.coveragePercent > 30 ? '#FBBF24' : '#F87171' }}>
                       {data.coveragePercent}%
                     </div>
-                    <div style={styles.statLabel}>{cat}</div>
+                    <div style={styles.statLabel}>{cat.replace(/([A-Z])/g, ' $1').trim()}</div>
                   </div>
                 ))}
               </div>
@@ -238,18 +336,18 @@ export default function Dashboard() {
                   {recs.recommendations.map((rec, i) => (
                     <div key={i} style={{ ...styles.recRow, borderLeft: `3px solid ${rec.business_impact === 'high' ? '#34D399' : rec.business_impact === 'medium' ? '#FBBF24' : '#64748B'}` }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
                           <span style={styles.rankBadge}>#{rec.rank}</span>
                           <strong style={{ fontSize: 14, color: '#F8FAFC' }}>{rec.title}</strong>
                           <span style={{ fontSize: 11, background: '#334155', padding: '2px 6px', borderRadius: 4, color: '#94A3B8' }}>{rec.post_type}</span>
-                          <span style={{ fontSize: 11, background: rec.business_impact === 'high' ? '#064E3B' : '#1E293B', padding: '2px 6px', borderRadius: 4, color: rec.business_impact === 'high' ? '#34D399' : '#94A3B8' }}>{rec.business_impact} impact</span>
+                          <span style={{ fontSize: 11, background: rec.business_impact === 'high' ? '#064E3B' : '#1E293B', padding: '2px 6px', borderRadius: 4, color: rec.business_impact === 'high' ? '#34D399' : '#94A3B8' }}>{rec.business_impact}</span>
                         </div>
                         <div style={{ fontSize: 12, color: '#94A3B8', lineHeight: 1.4 }}>
                           <span style={{ color: '#CBD5E1' }}>Keyword:</span> {rec.target_keyword} — {rec.reasoning}
                         </div>
                       </div>
-                      <button onClick={() => useRecommendation(rec)} style={styles.useRecBtn}>
-                        ⚡ Generate This
+                      <button onClick={() => useRecommendation(rec)} style={{ ...styles.useRecBtn, background: activeBiz.bg, color: activeBiz.color }}>
+                        ⚡ Generate
                       </button>
                     </div>
                   ))}
@@ -260,7 +358,7 @@ export default function Dashboard() {
 
           {!recs && !recsLoading && (
             <p style={{ color: '#64748B', fontSize: 14, margin: 0 }}>
-              Click "Get AI Recommendations" to analyze your content gaps and get prioritized suggestions for what to write next.
+              Analyze content gaps and get prioritized topic recommendations for {activeBiz.name}.
             </p>
           )}
         </section>
@@ -276,7 +374,7 @@ export default function Dashboard() {
                   style={styles.input}
                   value={keyword}
                   onChange={e => setKeyword(e.target.value)}
-                  placeholder="e.g., AI receptionist for auto repair shops"
+                  placeholder="e.g., reduce AI receptionist client churn rate"
                   disabled={generating}
                 />
               </div>
@@ -299,46 +397,61 @@ export default function Dashboard() {
                 disabled={generating}
               />
             </div>
-            <button type="submit" style={styles.generateBtn} disabled={generating || !keyword.trim()}>
-              {generating ? (genStep || '⏳ Starting...') : '⚡ Generate Blog Post'}
-            </button>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <button type="submit" style={{ ...styles.generateBtn, background: activeBiz.bg }} disabled={generating || !keyword.trim()}>
+                {generating ? (genStep || '⏳ Starting...') : `⚡ Generate for ${activeBiz.name}`}
+              </button>
+              {generating && runCost > 0 && (
+                <span style={{ fontSize: 13, color: '#94A3B8' }}>Est. cost so far: ${runCost.toFixed(2)}</span>
+              )}
+            </div>
           </form>
 
+          {/* Cost breakdown */}
+          {!generating && runCost > 0 && (
+            <div style={{ marginTop: 12, padding: '8px 12px', background: '#0F172A', borderRadius: 6, fontSize: 12, color: '#64748B' }}>
+              💰 Estimated run cost: <strong style={{ color: '#F8FAFC' }}>${runCost.toFixed(2)}</strong>
+              {' '}({Object.entries(STEP_COSTS).filter(([k]) => {
+                if (k === 'template_static') return activeBiz.linkFormat !== 'nextjs';
+                if (k === 'template_nextjs') return activeBiz.linkFormat === 'nextjs';
+                return true;
+              }).map(([, v]) => `${v.label}: $${v.est.toFixed(2)}`).join(' + ')})
+            </div>
+          )}
+
           {genResult && (
-            <div style={styles.resultBox}>
-              {genResult.validationFailed ? (
+            <div style={{ ...styles.resultBox, background: genResult.validationFailed || genResult.dedupFailed ? '#7F1D1D' : '#064E3B' }}>
+              {genResult.dedupFailed ? (
                 <>
-                  <strong style={{ color: '#DC2626' }}>⛔ Validation Failed:</strong> {genResult.post?.title || 'Unknown'}
-                  <div style={{ marginTop: 8, fontSize: 13, color: '#DC2626' }}>
-                    <strong>Errors:</strong> {genResult.validation.errors.join(' | ')}
+                  <strong style={{ color: '#FCA5A5' }}>⚠️ Duplicate Detected:</strong> {genResult.dedup?.recommendation}
+                  <div style={{ marginTop: 4, fontSize: 13, color: '#FECACA' }}>
+                    Slug "{genResult.post?.slug}" already exists. Try a different keyword angle.
                   </div>
-                  {genResult.validation.warnings?.length > 0 && (
-                    <div style={{ marginTop: 4, fontSize: 13, color: '#92400E' }}>
-                      <strong>Warnings:</strong> {genResult.validation.warnings.join(' | ')}
-                    </div>
-                  )}
+                </>
+              ) : genResult.validationFailed ? (
+                <>
+                  <strong style={{ color: '#FCA5A5' }}>⛔ Validation Failed:</strong> {genResult.post?.title}
+                  <div style={{ marginTop: 8, fontSize: 13, color: '#FCA5A5' }}>
+                    {genResult.validation?.errors?.join(' | ')}
+                  </div>
                 </>
               ) : genResult.qc ? (
                 <>
-                  <strong>✅ Generated:</strong> {genResult.post.title} ({genResult.post.word_count} words)
+                  <strong>✅ Generated:</strong> {genResult.post?.title} ({genResult.post?.word_count} words)
                   <br />
-                  <strong>QC Verdict:</strong> {genResult.qc.verdict}
+                  <strong>QC:</strong> {genResult.qc.verdict}
                   {genResult.qc.scores && (
                     <span> — SEO: {genResult.qc.scores.seo}/10, AEO: {genResult.qc.scores.aeo_readiness}/10, Info Gain: {genResult.qc.scores.information_gain}/10, Overall: {genResult.qc.scores.overall}/10</span>
                   )}
+                  {genResult.cost && <span style={{ color: '#94A3B8' }}> — Est. cost: ${genResult.cost.toFixed(2)}</span>}
                   {genResult.qc.hallucination_flags?.length > 0 && (
-                    <div style={{ marginTop: 8, fontSize: 13, color: '#DC2626' }}>
+                    <div style={{ marginTop: 8, fontSize: 13, color: '#FCA5A5' }}>
                       ⚠️ Hallucination flags: {genResult.qc.hallucination_flags.join(' | ')}
                     </div>
                   )}
                   {genResult.qc.business_protection_flags?.length > 0 && (
-                    <div style={{ marginTop: 4, fontSize: 13, color: '#DC2626' }}>
+                    <div style={{ marginTop: 4, fontSize: 13, color: '#FCA5A5' }}>
                       🛡️ Business flags: {genResult.qc.business_protection_flags.join(' | ')}
-                    </div>
-                  )}
-                  {genResult.qc.issues?.length > 0 && (
-                    <div style={{ marginTop: 4, fontSize: 13, color: '#92400E' }}>
-                      Issues: {genResult.qc.issues.join(' | ')}
                     </div>
                   )}
                 </>
@@ -349,7 +462,7 @@ export default function Dashboard() {
           )}
         </section>
 
-        {/* Error display */}
+        {/* Error */}
         {error && (
           <div style={styles.errorBox}>
             <strong>Error:</strong> {error}
@@ -360,14 +473,14 @@ export default function Dashboard() {
         {/* Posts List */}
         <section style={styles.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={styles.cardTitle}>Generated Posts ({posts.length})</h2>
+            <h2 style={styles.cardTitle}>Generated Posts — {activeBiz.name} ({posts.length})</h2>
             <button onClick={fetchPosts} style={styles.refreshBtn}>↻ Refresh</button>
           </div>
 
           {loading ? (
             <p style={{ color: '#94A3B8', textAlign: 'center', padding: 40 }}>Loading...</p>
           ) : posts.length === 0 ? (
-            <p style={{ color: '#94A3B8', textAlign: 'center', padding: 40 }}>No posts yet. Generate your first one above.</p>
+            <p style={{ color: '#94A3B8', textAlign: 'center', padding: 40 }}>No generated posts yet for {activeBiz.name}.</p>
           ) : (
             <div style={styles.postsList}>
               {posts.map(post => {
@@ -383,9 +496,9 @@ export default function Dashboard() {
                         <span style={{ ...styles.statusBadge, backgroundColor: statusInfo.bg, color: statusInfo.text }}>
                           {statusInfo.label}
                         </span>
-                        <span>{post.primary_keyword}</span>
-                        <span>{post.word_count} words</span>
-                        <span>{post.read_time}</span>
+                        {post.primary_keyword && <span>{post.primary_keyword}</span>}
+                        {post.word_count > 0 && <span>{post.word_count} words</span>}
+                        {post.read_time && <span>{post.read_time}</span>}
                         {post.qc_score?.overall && <span>QC: {post.qc_score.overall}/10</span>}
                         <span>{new Date(post.created_at).toLocaleDateString()}</span>
                       </div>
@@ -396,21 +509,16 @@ export default function Dashboard() {
                         <>
                           <button
                             onClick={() => handleApprove(post.id)}
-                            style={styles.approveBtn}
+                            style={{ ...styles.approveBtn, background: activeBiz.bg }}
                             disabled={publishing === post.id}
                           >
-                            {publishing === post.id ? '⏳ Publishing...' : '✅ Approve & Publish'}
+                            {publishing === post.id ? '⏳...' : '✅ Publish'}
                           </button>
-                          <button onClick={() => handleReject(post.id)} style={styles.rejectBtn}>❌ Reject</button>
+                          <button onClick={() => handleReject(post.id)} style={styles.rejectBtn}>❌</button>
                         </>
                       )}
                       {post.status === 'published' && (
-                        <a
-                          href={`https://callbirdai.com/blog-${post.slug}.html`}
-                          target="_blank"
-                          rel="noopener"
-                          style={styles.liveLink}
-                        >
+                        <a href={getLiveUrl(post)} target="_blank" rel="noopener" style={styles.liveLink}>
                           🔗 View Live
                         </a>
                       )}
@@ -428,15 +536,21 @@ export default function Dashboard() {
         <div style={styles.modal} onClick={() => setPreviewId(null)}>
           <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
             <div style={styles.modalHeader}>
-              <span style={{ fontWeight: 600 }}>Preview</span>
+              <span style={{ fontWeight: 600 }}>Preview — {activeBiz.name}</span>
               <button onClick={() => setPreviewId(null)} style={styles.modalClose}>✕</button>
             </div>
-            <iframe
-              srcDoc={previewHtml}
-              style={styles.previewFrame}
-              title="Blog Post Preview"
-              sandbox="allow-same-origin"
-            />
+            {activeBiz.linkFormat === 'nextjs' ? (
+              <div style={{ flex: 1, overflow: 'auto', padding: 24, background: '#050505', color: '#fafaf9' }}
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
+            ) : (
+              <iframe
+                srcDoc={previewHtml}
+                style={styles.previewFrame}
+                title="Blog Post Preview"
+                sandbox="allow-same-origin"
+              />
+            )}
           </div>
         </div>
       )}
@@ -447,9 +561,11 @@ export default function Dashboard() {
 const styles = {
   container: { fontFamily: "'Inter', -apple-system, sans-serif", background: '#0F172A', minHeight: '100vh', color: '#E2E8F0' },
   header: { background: '#1E293B', borderBottom: '1px solid #334155', padding: '16px 24px' },
-  headerInner: { maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  headerInner: { maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 },
   logo: { fontSize: 20, fontWeight: 700, color: '#F8FAFC', margin: 0 },
-  badge: { background: '#122092', color: '#F6B828', padding: '4px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
+  bizSelector: { display: 'flex', gap: 4 },
+  bizTab: { border: '1px solid', borderRadius: 6, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' },
+  badge: { padding: '4px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   main: { maxWidth: 1200, margin: '0 auto', padding: '24px 24px 80px' },
   card: { background: '#1E293B', borderRadius: 12, padding: 24, marginBottom: 20, border: '1px solid #334155' },
   cardTitle: { fontSize: 18, fontWeight: 600, color: '#F8FAFC', marginTop: 0, marginBottom: 16 },
@@ -459,8 +575,8 @@ const styles = {
   label: { fontSize: 13, color: '#94A3B8', fontWeight: 500 },
   input: { background: '#0F172A', border: '1px solid #334155', borderRadius: 8, padding: '10px 14px', color: '#F8FAFC', fontSize: 14, outline: 'none' },
   select: { background: '#0F172A', border: '1px solid #334155', borderRadius: 8, padding: '10px 14px', color: '#F8FAFC', fontSize: 14, outline: 'none' },
-  generateBtn: { background: '#122092', color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 4 },
-  resultBox: { background: '#064E3B', borderRadius: 8, padding: 16, marginTop: 12, fontSize: 14, color: '#D1FAE5', lineHeight: 1.6 },
+  generateBtn: { color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 4 },
+  resultBox: { borderRadius: 8, padding: 16, marginTop: 12, fontSize: 14, color: '#D1FAE5', lineHeight: 1.6 },
   errorBox: { background: '#7F1D1D', borderRadius: 8, padding: 16, marginBottom: 20, fontSize: 14, color: '#FEE2E2', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   dismissBtn: { background: 'none', border: 'none', color: '#FEE2E2', cursor: 'pointer', fontSize: 16 },
   refreshBtn: { background: '#334155', border: 'none', borderRadius: 6, padding: '6px 14px', color: '#94A3B8', fontSize: 13, cursor: 'pointer' },
@@ -471,7 +587,7 @@ const styles = {
   statusBadge: { padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 },
   postActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
   actionBtn: { background: '#334155', border: 'none', borderRadius: 6, padding: '6px 12px', color: '#CBD5E1', fontSize: 13, cursor: 'pointer' },
-  approveBtn: { background: '#065F46', border: 'none', borderRadius: 6, padding: '6px 12px', color: '#D1FAE5', fontSize: 13, cursor: 'pointer', fontWeight: 600 },
+  approveBtn: { border: 'none', borderRadius: 6, padding: '6px 12px', color: '#D1FAE5', fontSize: 13, cursor: 'pointer', fontWeight: 600 },
   rejectBtn: { background: '#7F1D1D', border: 'none', borderRadius: 6, padding: '6px 12px', color: '#FEE2E2', fontSize: 13, cursor: 'pointer' },
   liveLink: { background: '#1E40AF', borderRadius: 6, padding: '6px 12px', color: '#DBEAFE', fontSize: 13, textDecoration: 'none', fontWeight: 500 },
   modal: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 },
@@ -483,6 +599,6 @@ const styles = {
   statNum: { fontSize: 22, fontWeight: 700, color: '#F8FAFC' },
   statLabel: { fontSize: 11, color: '#64748B', marginTop: 2, textTransform: 'capitalize' },
   recRow: { background: '#0F172A', borderRadius: 8, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  rankBadge: { background: '#334155', color: '#CBD5E1', padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums' },
-  useRecBtn: { background: '#122092', border: 'none', borderRadius: 6, padding: '8px 14px', color: '#F6B828', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
+  rankBadge: { background: '#334155', color: '#CBD5E1', padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 700 },
+  useRecBtn: { border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
 };

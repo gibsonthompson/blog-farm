@@ -1,6 +1,6 @@
 export const metadata = {
-  title: 'Blog Automation | CallBird AI',
-  description: 'Automated blog post generation and publishing pipeline',
+  title: 'Blog Automation | Content Pipeline',
+  description: 'Multi-tenant automated blog post generation and publishing pipeline',
 };
 
 export default function RootLayout({ children }) {
