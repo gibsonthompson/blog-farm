@@ -28,7 +28,7 @@ export async function runQualityControl(postId, business, brandKit) {
     : '';
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 6000,
     thinking: { type: 'enabled', budget_tokens: 3000 },
     system: `You are a strict quality control reviewer for blog posts. You review content against specific brand standards and SEO requirements. You MUST be critical — do not pass content that has issues. Think carefully before scoring.

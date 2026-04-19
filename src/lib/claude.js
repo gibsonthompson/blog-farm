@@ -37,7 +37,7 @@ export async function runResearch(targetKeyword, postType, biz = null, brandKit 
   const audienceContext = brandKit?.target_audience?.substring(0, 200) || 'Small business owners';
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 3000,
     tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
     messages: [{
@@ -252,20 +252,16 @@ MATCH THESE PATTERNS from the reference posts:
 - How pricing is always specific, never "affordable" or "competitive"
 - How each section delivers standalone value — no filler paragraphs
 - The conversational but authoritative tone — confident without being salesy
-- Specific scenarios and industry examples, not abstract advice
 - How CTAs feel natural, not forced
 - How competitor strengths are acknowledged honestly
-
-STORYTELLING TECHNIQUES:
-- Put the reader IN the scenario. NOT "Missed calls cost businesses money."
-- Use BEFORE/AFTER comparisons: show steps without the solution, then steps with it.
-- Use hypothetical framing: "Consider a business that..." or "Picture this:" — NOT fabricated case studies.
-- Create emotional urgency through math, not adjectives.
-- One vivid, detailed scenario is worth more than three abstract formulas.
 
 WRITING STYLE:
 ${brandKit.writing_style_examples}
 </writing_examples>
+
+<content_strategy>
+${brandKit.content_strategy || 'No business-specific content strategy loaded. Write in a direct, specific, conversational tone. Use frameworks and real numbers. Avoid fabricated scenarios.'}
+</content_strategy>
 
 <post_type>
 ${postTypeInstructions}
@@ -282,38 +278,26 @@ IMPORTANT: The framework is a GUIDE, not a straitjacket. If a section doesn't ea
 <hard_rules>
 - Author: Gibson Thompson
 - Year: ${new Date().getFullYear()} (never ${new Date().getFullYear() - 1})
-- NEVER invent organization names. No "Customer Service Institute." If you don't know the real source, write "industry data suggests"
+- NEVER invent organization names. If you don't know the real source, write "industry data suggests"
 - NEVER fabricate precise statistics. Ranges over false precision.
 - Every internal link must use real slugs from the existing posts list below
 - Min 3 internal links, spread naturally across the post
 - 4-6 FAQ items with standalone answers (each answer works if quoted alone by an AI engine)
+- NEVER describe product features that aren't explicitly listed in the company context above
+- If you include a calculation, VERIFY THE MATH ADDS UP internally
+- ${companyName} is the GUIDE, customer is the HERO (StoryBrand)
+- NEVER recommend a competitor over ${companyName}. Acknowledge strengths honestly, but always show why ${companyName} is the better fit for the target audience.
 
 EXPERIENCE & CREDIBILITY RULES:
 - NEVER fabricate first-person anecdotes. No "I've seen businesses...", "I've helped companies..."
-  Instead use HYPOTHETICAL framing: "Consider a business that..." or "A typical company..."
-- NEVER claim to have "tested" or "reviewed" or "analyzed data from" products/businesses you haven't.
-- NEVER invent sample sizes or data sets. No "after analyzing 2,074 businesses"
-- NEVER present invented percentages as data. Use qualitative language.
-- NEVER describe product features that aren't explicitly listed in the company context above.
-- If you include a calculation, VERIFY THE MATH ADDS UP internally.
+- NEVER claim to have "tested" or "reviewed" products/businesses you haven't
+- NEVER invent sample sizes. No "after analyzing 2,074 businesses"
+- NEVER present invented percentages as data. Use qualitative language if no verified source.
 
 STRUCTURAL VARIETY:
-- Do NOT use numbered "Hidden Cost #1, #2, #3" patterns for more than 3 items.
 - Vary paragraph length. Some short (1-2 sentences). Some medium (3-4 sentences).
 - Not every section needs a stat box. Use them only 2-3 times for the most important numbers.
-
-BUSINESS-CRITICAL — VIOLATION MEANS INSTANT REJECTION:
-- NEVER recommend a competitor over ${companyName}. Acknowledge competitor strengths honestly, but never say "use [competitor] instead."
-- NEVER create fear about the product category. Frame problems as things ${companyName} SOLVES.
-- EVERY post must end with the reader wanting to try ${companyName}.
-- ${companyName} is the GUIDE, customer is the HERO (StoryBrand). Customer has a problem. ${companyName} helps them solve it.
-- Never suggest long implementation timelines — setup is fast.
-
-COMPARISON POST RULES (for posts mentioning competitors):
-- ${companyName} must be positioned as the BEST OVERALL choice for the target audience.
-- Never concede entire business categories to competitors.
-- In "Choose X if / Choose Y if" sections, ${companyName}'s list must be longer and more compelling.
-- Always end comparison posts with ${companyName} as the clear winner.
+- Do NOT repeat the same formula/calculation more than once with different numbers. Show ONE example, summarize the rest.
 </hard_rules>
 
 <link_targets>
@@ -330,7 +314,7 @@ Service page links: <a href="${serviceBaseUrl}/path">anchor text</a>
 </link_targets>
 
 <anti_patterns>
-NEVER write these patterns — they instantly mark content as AI-generated:
+NEVER write these patterns — they mark content as AI-generated:
 
 LANGUAGE PATTERNS:
 - "In today's [adjective] [noun]..." or "In the [adjective] world of..."
@@ -342,21 +326,13 @@ LANGUAGE PATTERNS:
 - "Cutting-edge" / "Game-changing" / "Revolutionizing" / "Leveraging"
 - Any paragraph that starts with "Moreover," "Furthermore," "Additionally,"
 - Concluding paragraphs that start with "In conclusion,"
-- "Here's the brutal math" / "Here's what you need to know"
 
-CREDIBILITY KILLERS:
-- First-person fabricated claims
-- The specific number "$126,000 annually" — unverified viral stat. REJECT.
-- "85% of callers never call back" — unverified. Use "most callers who reach voicemail move on to a competitor"
-- "78% of customers buy from the first company that responds" — unverified.
-- ANY percentage or dollar figure not in the VERIFIED STATISTICS list AND not calculated from real pricing.
-- "Research shows" used more than twice
-
-STRUCTURAL TEMPLATE-FILLING:
+STRUCTURAL ANTI-PATTERNS:
 - Same formula/calculation repeated 3+ times with different numbers
 - More than 3 sections with identical internal structure
 - Stat boxes in every single section
-- Lists of 3 with parallel "By [gerund]..." structure
+- "Research shows" or "studies indicate" used more than twice
+- ANY unattributed percentage — if it's not in VERIFIED STATISTICS, don't use it
 </anti_patterns>
 
 <output_format>
@@ -416,11 +392,12 @@ QUALITY CHECK:
 7. Would a reader who Googled "${targetKeyword}" learn something they couldn't find on the first page of results?
 8. Same formula/template used 3+ times? Fix it.
 9. Any fabricated anecdote presented as real? Change to hypothetical.
+10. Review the SELF-REVIEW ADDITIONS in the content_strategy section above and verify compliance.
 </self_review>
 ${notes ? `\n<publisher_notes>${notes}</publisher_notes>` : ''}`;
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 16000,
     thinking: { type: 'enabled', budget_tokens: 5000 },
     messages: [{ role: 'user', content: prompt }],
@@ -529,7 +506,7 @@ Build a complete HTML file with:
 Return ONLY the complete HTML. No explanation, no markdown fences. Start with <!DOCTYPE html>.`;
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 16000,
     messages: [{ role: 'user', content: prompt }],
   });
