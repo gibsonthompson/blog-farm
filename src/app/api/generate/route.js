@@ -56,7 +56,27 @@ async function handleResearch(body, businessSlug) {
     .from('blog_businesses').select('*').eq('slug', businessSlug).single();
   if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
-  // Dedup gate
+  // ── CLEANUP stale records for this slug BEFORE dedup ──
+  const baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const { data: existingRecords } = await supabase.from('blog_generated_posts')
+    .select('id, title, status').eq('business_id', biz.id).eq('slug', baseSlug);
+  if (existingRecords?.length) {
+    const live = existingRecords.filter(r => ['published', 'approved'].includes(r.status));
+    if (live.length) {
+      return NextResponse.json({
+        success: false, blocked: true,
+        error: `Slug "${baseSlug}" already published as "${live[0].title}".`,
+      }, { status: 409 });
+    }
+    const deadIds = existingRecords.map(r => r.id);
+    if (deadIds.length) {
+      await supabase.from('blog_generation_logs').delete().in('post_id', deadIds);
+      await supabase.from('blog_generated_posts').delete().in('id', deadIds);
+      console.log(`[blog-farm] Cleaned ${deadIds.length} stale records for slug "${baseSlug}"`);
+    }
+  }
+
+  // Dedup gate (now only catches real conflicts — published posts + blog_existing_posts)
   console.log(`[blog-farm] Running dedup check... (${Date.now() - stepStart}ms)`);
   const preCheck = await validateKeywordUniqueness(biz.id, targetKeyword, postType);
   console.log(`[blog-farm] Dedup done (${Date.now() - stepStart}ms)`);
@@ -85,30 +105,7 @@ async function handleResearch(body, businessSlug) {
   console.log(`[blog-farm] Research complete (${Date.now() - stepStart}ms total)`);
   const duration = Date.now() - startTime;
 
-  // Create post record with research saved
-  let baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-
-  // Check for existing records with this slug
-  const { data: existingRecords } = await supabase.from('blog_generated_posts')
-    .select('id, title, status').eq('business_id', biz.id).eq('slug', baseSlug);
-
-  if (existingRecords?.length) {
-    // Only block if the post is published or approved (actively in use)
-    const live = existingRecords.filter(r => ['published', 'approved'].includes(r.status));
-    if (live.length) {
-      return NextResponse.json({
-        error: `A post with slug "${baseSlug}" already exists: "${live[0].title}" (${live[0].status}). Use a different keyword angle.`,
-      }, { status: 409 });
-    }
-
-    // Clean up everything else (failed attempts, revisions, stale generating records)
-    const deadIds = existingRecords.filter(r => !['published', 'approved'].includes(r.status)).map(r => r.id);
-    if (deadIds.length) {
-      await supabase.from('blog_generation_logs').delete().in('post_id', deadIds);
-      await supabase.from('blog_generated_posts').delete().in('id', deadIds);
-    }
-  }
-
+  // Create post record (slug already cleaned up before dedup check)
   const { data: post, error } = await supabase
     .from('blog_generated_posts')
     .insert({
@@ -420,7 +417,27 @@ async function handleFull(body, businessSlug) {
 
     const publishMode = biz.publish_mode || 'static';
 
-    // ── STEP 1: Dedup + Research ──
+    // ── CLEANUP stale records for this slug BEFORE dedup ──
+    const baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').substring(0, 80);
+    const { data: existingRecords } = await supabase.from('blog_generated_posts')
+      .select('id, title, status').eq('business_id', biz.id).eq('slug', baseSlug);
+    if (existingRecords?.length) {
+      const live = existingRecords.filter(r => ['published', 'approved'].includes(r.status));
+      if (live.length) {
+        return NextResponse.json({
+          success: false, blocked: true,
+          error: `Slug "${baseSlug}" already published as "${live[0].title}".`,
+        }, { status: 409 });
+      }
+      // Remove stale attempts (pending, failed, revision_needed, generating)
+      const deadIds = existingRecords.map(r => r.id);
+      if (deadIds.length) {
+        await supabase.from('blog_generation_logs').delete().in('post_id', deadIds);
+        await supabase.from('blog_generated_posts').delete().in('id', deadIds);
+      }
+    }
+
+    // ── STEP 1: Dedup (checks blog_existing_posts + live generated posts) + Research ──
     const preCheck = await validateKeywordUniqueness(biz.id, targetKeyword, postType);
     if (!preCheck.safe) {
       return NextResponse.json({
@@ -436,23 +453,6 @@ async function handleFull(body, businessSlug) {
     steps.push({ step: 'research', status: 'success', verifiedStats: (research.verified_statistics || []).length, gaps: (research.content_gaps || []).length, elapsed: `${Date.now() - startTime}ms` });
 
     // Create post record
-    const baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').substring(0, 80);
-
-    // Clean up old failed attempts
-    const { data: existingRecords } = await supabase.from('blog_generated_posts')
-      .select('id, title, status').eq('business_id', biz.id).eq('slug', baseSlug);
-    if (existingRecords?.length) {
-      const live = existingRecords.filter(r => ['published', 'approved'].includes(r.status));
-      if (live.length) {
-        return NextResponse.json({ error: `Slug "${baseSlug}" already exists: "${live[0].title}" (${live[0].status})` }, { status: 409 });
-      }
-      const deadIds = existingRecords.filter(r => !['published', 'approved'].includes(r.status)).map(r => r.id);
-      if (deadIds.length) {
-        await supabase.from('blog_generation_logs').delete().in('post_id', deadIds);
-        await supabase.from('blog_generated_posts').delete().in('id', deadIds);
-      }
-    }
-
     const { data: post } = await supabase.from('blog_generated_posts').insert({
       business_id: biz.id, title: `[Generating] ${targetKeyword}`, slug: baseSlug,
       primary_keyword: targetKeyword, category: postType,
