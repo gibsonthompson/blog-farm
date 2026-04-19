@@ -335,8 +335,32 @@ No markdown fences. No explanation outside the JSON. Just the array.`
   let recommendations;
   try {
     const textBlocks = response.content.filter(b => b.type === 'text');
-    const text = textBlocks.map(b => b.text).join('\n').trim().replace(/```json\n?|```/g, '');
-    recommendations = JSON.parse(text);
+    
+    // Try each text block from last to first — JSON array is usually in the final block
+    let parsed = null;
+    for (let i = textBlocks.length - 1; i >= 0; i--) {
+      const blockText = textBlocks[i].text.trim().replace(/```json\n?|```/g, '').trim();
+      const jsonMatch = blockText.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          const attempt = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(attempt) && attempt.length > 0 && attempt[0].target_keyword) {
+            parsed = attempt;
+            break;
+          }
+        } catch { /* try next block */ }
+      }
+    }
+
+    if (!parsed) {
+      // Fallback: join all and try
+      const allText = textBlocks.map(b => b.text).join('\n').trim().replace(/```json\n?|```/g, '');
+      const jsonMatch = allText.match(/\[[\s\S]*\]/);
+      if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+    }
+
+    if (!parsed) throw new Error('No valid JSON array found in response');
+    recommendations = parsed;
   } catch (e) {
     throw new Error(`Strategist response was not valid JSON: ${e.message}`);
   }

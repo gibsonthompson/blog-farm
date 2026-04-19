@@ -91,20 +91,43 @@ ONLY valid JSON. No fences.`
     }],
   });
 
+  // Web search responses have multiple text blocks: intermediate commentary + final JSON
+  // Extract only the JSON from the last text block, or find JSON anywhere in the output
   const textBlocks = response.content.filter(b => b.type === 'text');
-  const text = textBlocks.map(b => b.text).join('\n').trim();
-
-  try {
-    return JSON.parse(text.replace(/```json\n?|```/g, '').trim());
-  } catch {
-    return {
-      top_results_summary: 'Parsing failed — using training knowledge.',
-      content_gaps: [], unique_angle: `Fresh perspective on ${targetKeyword}`,
-      hook: null, verified_statistics: [], questions_people_ask: [],
-      recommended_framework: postType === 'comparison' ? 'B' : postType === 'industry' ? 'C' : 'E',
-      framework_reasoning: 'Default', suggested_sections: [], competitor_claims_to_verify: [],
-    };
+  
+  // Try each text block from last to first — the JSON is usually in the final block
+  for (let i = textBlocks.length - 1; i >= 0; i--) {
+    const blockText = textBlocks[i].text.trim().replace(/```json\n?|```/g, '').trim();
+    // Try to find a JSON object in this block
+    const jsonMatch = blockText.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        // Validate it has expected fields
+        if (parsed.unique_angle || parsed.verified_statistics || parsed.content_gaps) {
+          return parsed;
+        }
+      } catch { /* not valid JSON, try next block */ }
+    }
   }
+
+  // Fallback: join all text and try to parse
+  const allText = textBlocks.map(b => b.text).join('\n').trim().replace(/```json\n?|```/g, '').trim();
+  const jsonMatch = allText.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch { /* fall through to default */ }
+  }
+
+  console.warn(`[blog-farm] Research JSON parsing failed. Raw text blocks: ${textBlocks.length}, total chars: ${allText.length}`);
+  return {
+    top_results_summary: 'Parsing failed — using training knowledge.',
+    content_gaps: [], unique_angle: `Fresh perspective on ${targetKeyword}`,
+    hook: null, verified_statistics: [], questions_people_ask: [],
+    recommended_framework: postType === 'comparison' ? 'B' : postType === 'industry' ? 'C' : 'E',
+    framework_reasoning: 'Default', suggested_sections: [], competitor_claims_to_verify: [],
+  };
 }
 
 // ─────────────────────────────────────────────────────────

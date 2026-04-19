@@ -5,7 +5,8 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /**
  * Run quality control check on a generated blog post.
- * Uses a separate Claude call to review the content against brand standards.
+ * Fully multi-tenant — brand references pulled from business + brandKit.
+ * Publish-mode aware — skips HTML structure checks for nextjs (article body only).
  */
 export async function runQualityControl(postId, business, brandKit) {
   const { data: post } = await supabase
@@ -17,6 +18,14 @@ export async function runQualityControl(postId, business, brandKit) {
   if (!post) throw new Error('Post not found');
 
   const startTime = Date.now();
+  const companyName = business.name;
+  const publishMode = business.publish_mode || 'static';
+  const isNextjs = publishMode === 'nextjs';
+
+  // For nextjs mode, content is article body only (no DOCTYPE, head, GTM, phone in footer)
+  const htmlStructureNote = isNextjs
+    ? `\nIMPORTANT: This is article-body-only HTML (rendered inside a Next.js layout). There is NO DOCTYPE, head, title tag, GTM script, footer, or H1. Skip checks for: has_gtm, has_title_tag, has_canonical_url, has_og_tags, has_h1, single_h1, has_footer_compliance, mobile_responsive_css, correct_phone_number. Set those to true (not applicable). Focus on CONTENT QUALITY checks.`
+    : '';
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -28,16 +37,18 @@ Score each category 1-10 and provide specific feedback. Return ONLY valid JSON.`
 
     messages: [{
       role: 'user',
-      content: `Review this blog post for ${business.name} (${business.domain}).
+      content: `Review this blog post for ${companyName} (${business.domain}).
+${htmlStructureNote}
+
+=== COMPANY DESCRIPTION ===
+${brandKit.company_description}
 
 === PRICING THAT MUST BE ACCURATE ===
 ${brandKit.pricing_info}
 
-=== PHONE NUMBER THAT MUST BE CORRECT ===
-${business.phone}
+${business.phone ? `=== PHONE NUMBER THAT MUST BE CORRECT ===\n${business.phone}` : '=== NO PHONE NUMBER — skip phone checks ==='}
 
-=== GTM ID THAT MUST BE PRESENT ===
-${business.gtm_id}
+${business.gtm_id ? `=== GTM ID THAT MUST BE PRESENT ===\n${business.gtm_id}` : '=== NO GTM — skip GTM checks ==='}
 
 === THINGS THAT MUST BE PRESENT ===
 ${brandKit.dos.join('\n')}
@@ -71,9 +82,9 @@ Review the HTML and return a JSON object with this exact structure:
     "has_og_tags": <true/false>,
     "has_gtm": <true/false>,
     "has_faq_schema": <true/false>,
-    "schema_uses_graph": <true/false — check for @graph combining Article+FAQPage>,
-    "has_date_modified": <true/false — dateModified in Article schema>,
-    "has_author_attribution": <true/false — author name in schema and visible on page>,
+    "schema_uses_graph": <true/false>,
+    "has_date_modified": <true/false>,
+    "has_author_attribution": <true/false>,
     "has_h1": <true/false>,
     "single_h1": <true/false>,
     "has_internal_links": <true/false>,
@@ -87,46 +98,45 @@ Review the HTML and return a JSON object with this exact structure:
     "no_fabricated_revenue_figures": <true/false>,
     "no_generic_ai_intro": <true/false — first 200 words must NOT be generic>,
     "answer_first_structure": <true/false — do H2 sections lead with a direct 40-60 word answer?>,
-    "has_statistics_throughout": <true/false — verifiable data points every 150-200 words?>,
+    "has_statistics_throughout": <true/false>,
     "entity_clarity_in_intro": <true/false — first 200 words define what/who/cost/where?>,
-    "no_hallucinated_sources": <true/false — CRITICAL: are ALL named organizations, institutes, studies real and verifiable? Flag ANY that look invented like "Customer Service Institute" or "Emergency Service Institute">,
-    "no_fake_statistics": <true/false — are statistics presented with appropriate hedging when source is unknown? No hyper-specific unattributed percentages like "73.2%">,
-    "author_is_gibson_thompson": <true/false — author byline says "Gibson Thompson" not "CallBird Team" or generic>,
-    "correct_year_references": <true/false — all year references use 2026, not 2025 or earlier as if current>,
-    "no_competitor_recommendations": <true/false — Does the post actively PUSH readers toward competitors? Mentioning competitors by name with honest positioning is FINE in comparison posts and builds trust. What's NOT okay: "Don't use CallBird for [use case], use [competitor] instead" or positioning CallBird as only suitable for one narrow scenario while recommending competitors for everything else. The test: does a reader finish the post thinking CallBird is the best overall choice? If yes, competitor mentions are fine. If the post reads like a sales page for Smith.ai or Dialzara, that's a reject.>,
-    "no_category_fear": <true/false — does the post create fear/doubt about AI receptionists as a category? Posts should make readers WANT an AI receptionist, not afraid of hidden costs, complexity, or risks.>,
-    "callbird_positioned_favorably": <true/false — does the reader finish wanting to try CallBird? Or do they finish thinking "this is too expensive/complicated/risky"?>,
-    "callbird_setup_accurate": <true/false — does the post accurately reflect that CallBird setup takes minutes, not weeks/months? That ROI is immediate from captured calls?>
+    "no_hallucinated_sources": <true/false — CRITICAL: are ALL named organizations real?>,
+    "no_fake_statistics": <true/false>,
+    "author_is_gibson_thompson": <true/false — author byline says "Gibson Thompson" not "${companyName} Team" or generic>,
+    "correct_year_references": <true/false — all year references use ${new Date().getFullYear()}, not ${new Date().getFullYear() - 1}>,
+    "no_competitor_recommendations": <true/false — Does the post actively PUSH readers toward competitors? Mentioning competitors honestly is FINE. What's NOT okay: "Don't use ${companyName} for [use case], use [competitor] instead." The test: does a reader finish thinking ${companyName} is the best choice?>,
+    "no_category_fear": <true/false — does the post create fear about the product category?>,
+    "brand_positioned_favorably": <true/false — does the reader finish wanting to try ${companyName}?>,
+    "brand_claims_accurate": <true/false — does the post accurately reflect the company description and features above? No invented capabilities?>
   },
   "issues": ["list of specific issues found"],
   "suggestions": ["list of improvement suggestions"],
-  "hallucination_flags": ["list any organization names, study names, or statistics that appear fabricated — be specific"],
-  "business_protection_flags": ["list any statements that recommend competitors over CallBird, create fear about AI receptionists, or position CallBird unfavorably"],
-  "information_gain_assessment": "1-2 sentences on what unique value this post adds vs typical competitor content",
-  "aeo_assessment": "1-2 sentences on how well-structured this is for AI engine citation",
+  "hallucination_flags": ["list any organization names, study names, or statistics that appear fabricated"],
+  "business_protection_flags": ["list any statements that recommend competitors over ${companyName}, create category fear, or position ${companyName} unfavorably"],
+  "information_gain_assessment": "1-2 sentences on unique value vs typical competitor content",
+  "aeo_assessment": "1-2 sentences on AI engine citation readiness",
   "verdict": "PASS" | "NEEDS_REVISION" | "REJECT"
 }
 
 Verdict rules:
-- PASS: overall >= 8 AND all critical checks pass (gtm, phone, pricing, no fabrications, no_hallucinated_sources, callbird_positioned_favorably)
-- NEEDS_REVISION: overall 5-7 OR AEO/information gain scores below 7 OR hallucination flags found OR category fear detected
-- REJECT: overall < 5 OR critical brand violations OR multiple hallucinated sources OR post actively drives readers AWAY from CallBird toward competitors OR category fear that would discourage readers from getting any AI receptionist
+- PASS: overall >= 8 AND all critical checks pass (no fabrications, no_hallucinated_sources, brand_positioned_favorably)
+- NEEDS_REVISION: overall 5-7 OR AEO/information gain below 7 OR hallucination flags OR category fear
+- REJECT: overall < 5 OR critical brand violations OR multiple hallucinated sources OR post drives readers AWAY from ${companyName}
 
-NOTE ON COMPETITOR MENTIONS: Comparison posts and decision frameworks SHOULD mention competitors honestly — this builds trust and targets comparison keywords. Only REJECT if the post positions CallBird negatively while promoting competitors, or if a reader would finish the post wanting to buy a competitor product instead of trying CallBird.
+NOTE ON COMPETITOR MENTIONS: Comparison posts SHOULD mention competitors honestly — this builds trust. Only REJECT if ${companyName} is positioned negatively while promoting competitors.
 
-IMPORTANT SCORING GUIDANCE:
-- information_gain: Score 8+ ONLY if the post has a clear thesis or insight that is NOT covered by the top Google results for this keyword. "Another ROI calculator" is a 4. "A method for auditing your actual miss rate that no competitor explains" is an 8. Ask: would someone who already read 3 competitor posts on this topic learn something NEW from this one?
-- aeo_readiness: Score 8+ ONLY if each major section has a clear, extractable answer that an AI engine could cite standalone. Score 5 or below if answers are buried in paragraphs or require surrounding context.
-- content_quality: Score 8+ ONLY if the post teaches something useful to someone who DOESN'T buy CallBird. If the entire value proposition is "buy CallBird," that's a product page, not a blog post. Score 5 or below if the post is just a dressed-up sales pitch.
-- factual_accuracy: Score 5 or below if ANY named organization, institute, or study cannot be verified as real. Flag ALL suspicious sources in hallucination_flags.
-- STRUCTURAL ORIGINALITY: Flag NEEDS_REVISION if the post uses the same calculation template 3+ times with different numbers. Flag if more than 3 H2 sections could be swapped between any AI receptionist blog post and still make sense (they're not specific to THIS topic). Flag if the post follows the exact same structure as a typical competitor page: intro → cost formula → industry examples → comparison table → CTA.
-- YEAR CHECK: 2026 only. 2025 used as current = NEEDS_REVISION.
+SCORING GUIDANCE:
+- information_gain: Score 8+ ONLY if the post has a unique thesis not in top Google results. "Another comparison" = 4. "A method nobody explains" = 8.
+- aeo_readiness: Score 8+ ONLY if each section has extractable answers an AI engine could cite standalone.
+- content_quality: Score 8+ ONLY if useful to someone who DOESN'T buy ${companyName}. Dressed-up sales pitch = 5 or below.
+- factual_accuracy: Score 5 or below if ANY named source cannot be verified. Flag ALL suspicious sources.
+- STRUCTURAL ORIGINALITY: Flag if same calculation template repeated 3+ times. Flag if sections are interchangeable with any competitor blog.
+- YEAR CHECK: ${new Date().getFullYear()} only. ${new Date().getFullYear() - 1} used as current = NEEDS_REVISION.
 - BUSINESS PROTECTION: Competitor recommendations or category fear = INSTANT REJECT.
-- FABRICATED EXPERIENCE: Flag first-person claims like "I've seen..." or "After helping hundreds..." — these are AI hallucinations.
-- FABRICATED DATA: Flag any claims like "after analyzing X,XXX businesses" or "X% failure rate" that present invented numbers as real research data. If a percentage or sample size doesn't come from a named, verifiable source, it's probably fabricated. Especially suspicious: precise failure rates, conversion rates, or sample sizes that sound authoritative but have no attribution.
-- FABRICATED FEATURES: Flag any CallBird feature claims that aren't in the company description provided. If the post claims CallBird integrates with Salesforce, HubSpot, or Zapier, that's fabricated. If it describes the AI performing medical triage, legal conflict checks, or technical diagnostics, that's wrong — the AI answers phones and connects callers to humans.
-- MATH VERIFICATION: All calculations must be internally consistent. If headline says X, formula must produce X.
-- TEMPLATE-FILLING: If the same formula appears 3+ times with only the numbers changed, score content_quality 5 or below.
+- FABRICATED EXPERIENCE: Flag "I've seen..." or "After helping hundreds..." — these are AI hallucinations.
+- FABRICATED DATA: Flag "after analyzing X,XXX businesses" without attribution.
+- FABRICATED FEATURES: Flag any feature claims not in the company description provided.
+- MATH VERIFICATION: All calculations must be internally consistent.
 
 Return ONLY the JSON — no markdown fences, no explanation.`
     }],
@@ -134,10 +144,26 @@ Return ONLY the JSON — no markdown fences, no explanation.`
 
   let qcResult;
   try {
-    // With extended thinking, filter for text blocks only
     const textBlocks = response.content.filter(b => b.type === 'text');
-    const text = textBlocks.map(b => b.text).join('\n').trim().replace(/```json\n?|```/g, '');
-    qcResult = JSON.parse(text);
+    
+    // Try last text block first (most likely to contain the JSON)
+    let parsed = null;
+    for (let i = textBlocks.length - 1; i >= 0; i--) {
+      const blockText = textBlocks[i].text.trim().replace(/```json\n?|```/g, '').trim();
+      const jsonMatch = blockText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const attempt = JSON.parse(jsonMatch[0]);
+          if (attempt.scores && attempt.verdict) {
+            parsed = attempt;
+            break;
+          }
+        } catch { /* try next block */ }
+      }
+    }
+
+    if (!parsed) throw new Error('No valid QC JSON found in response');
+    qcResult = parsed;
   } catch (e) {
     throw new Error(`QC response was not valid JSON: ${e.message}`);
   }
@@ -158,13 +184,10 @@ Return ONLY the JSON — no markdown fences, no explanation.`
     updated_at: new Date().toISOString(),
   }).eq('id', postId);
 
-  // Log QC step
+  // Log
   await supabase.from('blog_generation_logs').insert({
-    post_id: postId,
-    step: 'qc',
-    status: qcResult.verdict.toLowerCase(),
-    details: qcResult,
-    duration_ms: duration,
+    post_id: postId, step: 'qc', status: qcResult.verdict.toLowerCase(),
+    details: qcResult, duration_ms: duration,
   });
 
   return qcResult;
