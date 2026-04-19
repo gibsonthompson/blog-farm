@@ -66,12 +66,17 @@ async function handleResearch(body, businessSlug) {
     }, { status: 409 });
   }
 
-  // Research
+  // Research — pass business context for multi-tenant prompts
   console.log(`[blog-farm] Starting web research... (${Date.now() - stepStart}ms)`);
   const startTime = Date.now();
+
+  // Load brand kit for research context
+  const { data: brandKit } = await supabase
+    .from('blog_brand_kits').select('*').eq('business_id', biz.id).single();
+
   let research;
   try {
-    research = await runResearch(targetKeyword, postType);
+    research = await runResearch(targetKeyword, postType, biz, brandKit);
   } catch (err) {
     console.error(`[blog-farm] Research failed after ${Date.now() - startTime}ms:`, err.message);
     return NextResponse.json({ error: `Research failed: ${err.message}` }, { status: 500 });
@@ -150,7 +155,7 @@ async function handleWrite(body, businessSlug) {
       .from('blog_generated_posts').select('*').eq('id', postId).single();
     if (postErr || !post) return NextResponse.json({ error: `Post not found: ${postErr?.message}` }, { status: 404 });
 
-    const { brandKit, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
+    const { business: biz, brandKit, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
 
     let promptData;
     try {
@@ -162,9 +167,9 @@ async function handleWrite(body, businessSlug) {
     }
     const { research, notes, targetKeyword, postType } = promptData;
 
-    // Write content
+    // Write content — pass biz for publish_mode awareness
     const startTime = Date.now();
-    const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes, referencePosts);
+    const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes, referencePosts, biz);
     const duration = Date.now() - startTime;
 
     if (!contentOutput || contentOutput.length < 100) {

@@ -14,7 +14,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const CONTENT_FRAMEWORKS = `
 Choose the ONE framework that best fits the topic and research. Variety is critical.
 
-A — "The Hidden Cost": The cost of NOT solving the problem. Hook with what missed calls/manual processes cost. Walk through the math. Show ROI of the solution.
+A — "The Hidden Cost": The cost of NOT solving the problem. Hook with what the problem costs. Walk through the math. Show ROI of the solution.
 B — "The Definitive Comparison": Quick verdict first. Fair feature breakdown. "Choose X if..." endings.
 C — "The Industry Insider": Open with vivid industry scenario. Use industry terminology throughout.
 D — "The Data Story": Lead with surprising statistic. Build narrative around data.
@@ -26,21 +26,32 @@ H — "The Expert Roundup": 5-8 key questions, each answer AEO-optimized.
 
 // ─────────────────────────────────────────────────────────
 //  STEP 1: RESEARCH (~15s)
+//  Now accepts business context for multi-tenant research
 // ─────────────────────────────────────────────────────────
 
-export async function runResearch(targetKeyword, postType) {
+export async function runResearch(targetKeyword, postType, biz = null, brandKit = null) {
+  // Build business context string from brand kit (or fall back to CallBird defaults)
+  const companyName = brandKit?.company_description?.split(' is ')[0] || biz?.name || 'CallBird AI';
+  const domain = biz?.domain || 'callbirdai.com';
+  const pricingSummary = brandKit?.pricing_info || '$99-$499/mo';
+  const audienceContext = brandKit?.target_audience?.substring(0, 200) || 'Small business owners';
+
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 3000,
     tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
     messages: [{
       role: 'user',
-      content: `You are researching "${targetKeyword}" to write a blog post (${postType}) for callbirdai.com (AI receptionist, $99-$499/mo).
+      content: `You are researching "${targetKeyword}" to write a blog post (${postType}) for ${domain}.
+
+COMPANY: ${companyName}
+AUDIENCE: ${audienceContext}
+PRICING: ${pricingSummary}
 
 PERFORM THESE SEARCHES IN ORDER:
 1. Search "${targetKeyword}" — analyze top 3-5 results for structure and gaps
-2. Search for statistics related to the topic (e.g., "missed call statistics small business" or "AI receptionist market data 2026")
-3. Search for a second set of statistics (e.g., "cost of missed calls" or "small business phone answering statistics")
+2. Search for statistics related to the topic (current year data preferred)
+3. Search for a second set of supporting statistics or industry benchmarks
 
 YOUR TWO JOBS:
 JOB 1: Find the content gap — what do the top results NOT cover well?
@@ -52,7 +63,7 @@ ANALYZE EACH TOP RESULT FOR:
 3. What questions would a reader still have? (we answer those)
 4. What industry-specific detail do they skip?
 
-BUSINESS CONTEXT: CallBird AI is our product. Angles must position AI receptionists positively. CallBird has NO setup fees, NO per-minute charges, setup takes 10 minutes.
+BUSINESS CONTEXT: ${companyName} is our product/platform. Angles must position the solution positively.
 
 Return JSON:
 {
@@ -74,7 +85,7 @@ Return JSON:
 
 CRITICAL: The "verified_statistics" array must ONLY contain stats you actually found in search results. Include the source name for each. If you only found 2 real stats, return 2 — do NOT pad with invented numbers. Empty array is better than fake data.
 
-Frameworks: A=Hidden Cost (of NOT having AI), B=Comparison, C=Industry Insider, D=Data Story, E=Step-by-Step, F=Myth Buster, G=Decision Framework, H=Expert Roundup.
+Frameworks: A=Hidden Cost, B=Comparison, C=Industry Insider, D=Data Story, E=Step-by-Step, F=Myth Buster, G=Decision Framework, H=Expert Roundup.
 
 ONLY valid JSON. No fences.`
     }],
@@ -98,33 +109,48 @@ ONLY valid JSON. No fences.`
 
 // ─────────────────────────────────────────────────────────
 //  STEP 2: WRITE CONTENT (~20s)
+//  Fully multi-tenant — all references from brand kit
 // ─────────────────────────────────────────────────────────
 
-export async function writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes, referencePosts = []) {
+export async function writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes, referencePosts = [], biz = null) {
+  const publishMode = biz?.publish_mode || 'static';
+  const domain = biz?.domain || 'callbirdai.com';
+  const companyName = biz?.name || 'CallBird AI';
+  const phone = biz?.phone;
+  const trialUrl = brandKit?.cta_templates?.[0]?.split('→')?.[1]?.trim() || `/signup`;
+
+  // Internal link format depends on publish mode
+  const linkPrefix = publishMode === 'nextjs' ? '/blog/' : 'blog-';
+  const linkSuffix = publishMode === 'nextjs' ? '' : '.html';
+  const serviceBaseUrl = publishMode === 'nextjs' ? '' : `https://${domain}`;
+
   const existingList = existingPosts
-    .map(p => `- "${p.title}" → blog-${p.slug}.html`)
+    .map(p => `- "${p.title}" → ${linkPrefix}${p.slug}${linkSuffix}`)
     .join('\n');
 
   const linkTargets = JSON.stringify(brandKit.internal_link_targets || [], null, 2);
 
-  // Load winning patterns from GSC data (returns null if not enough data yet)
+  // Load winning patterns from GSC data
   let performanceInsights = '';
   try {
     const patterns = await getWinningPatternsForPrompt(brandKit.business_id);
     if (patterns) {
       performanceInsights = `<performance_insights>\n${patterns}\n\nApply these insights. They come from real GSC data about what works on YOUR site.\n</performance_insights>`;
     }
-  } catch { /* GSC not connected yet — no problem */ }
+  } catch { /* GSC not connected yet */ }
 
-  const prompt = `<role>You are Gibson Thompson, founder of CallBird AI. You write like a business owner who's obsessed with the specific problem this post addresses — not like a content marketer filling a keyword slot. Before writing a single word, ask yourself: "If a business owner has already read the top 3 Google results for this keyword, what does THIS post tell them that those didn't?" If you can't answer that, you need a different angle.</role>
+  // Build post type instructions dynamically
+  const postTypeInstructions = getPostTypeInstructions(postType, companyName);
 
-<audience>Small business owners (1-50 employees) who are skeptical, busy, and have probably already read 2-3 articles on this topic. They've seen the generic ROI calculators, the "top 7 AI receptionists" listicles, and the comparison tables. They are NOT impressed by another version of the same content. They will ONLY keep reading if the first 3 sentences tell them something they haven't heard before.</audience>
+  const prompt = `<role>You are Gibson Thompson, founder of ${companyName}. You write like a business owner who's obsessed with the specific problem this post addresses — not like a content marketer filling a keyword slot. Before writing a single word, ask yourself: "If someone has already read the top 3 Google results for this keyword, what does THIS post tell them that those didn't?" If you can't answer that, you need a different angle.</role>
+
+<audience>${brandKit.target_audience}</audience>
 
 <reader_outcome>After reading this post, the reader should:
 1. Know ONE specific thing they didn't know before — not a vague insight, but a concrete fact, framework, or calculation they can use immediately
 2. Be able to take action TODAY without buying anything — the post must be useful even to readers who never become customers
 3. Feel like this was written by someone who thinks differently about this topic than everyone else online
-4. Want to try CallBird because the content proved its value, not because the CTAs were persuasive</reader_outcome>
+4. Want to try ${companyName} because the content proved its value, not because the CTAs were persuasive</reader_outcome>
 
 <information_gain_mandate>
 THIS IS THE MOST IMPORTANT SECTION. READ IT CAREFULLY.
@@ -141,9 +167,9 @@ INFORMATION GAIN TEST — your post must pass at least 2 of these:
 □ Does it combine two topics that are usually covered separately?
 
 STRUCTURAL ORIGINALITY — your post must NOT:
-- Follow the same section order as the top Google results (research tells you what they cover — deliberately reorder or restructure)
-- Use the same calculation/formula template 3+ times with different numbers swapped in (show ONE detailed example, then summarize others in a comparison table or single paragraph)
-- Have more than 3 H2 sections that could be swapped between any two AI receptionist blog posts and no one would notice (each section title should only make sense for THIS specific post)
+- Follow the same section order as the top Google results
+- Use the same calculation/formula template 3+ times with different numbers swapped in
+- Have more than 3 H2 sections that could be swapped between any two blog posts and no one would notice
 - Read like a product page disguised as a blog post — it must teach something, not just sell
 </information_gain_mandate>
 
@@ -160,7 +186,7 @@ VERIFIED STATISTICS (from actual web search — USE THESE, do not invent your ow
 ${(research.verified_statistics || []).map(s => `• ${s.stat} (Source: ${s.source}) — ${s.context}`).join('\n') || 'No verified statistics found. Use qualitative language ("most businesses," "a significant portion") instead of specific numbers.'}
 
 STATISTICS RULE — THIS IS NON-NEGOTIABLE:
-You may ONLY use statistics that appear in the verified list above. If a stat isn't listed above, you CANNOT use it in the post. No exceptions. If you need a number and don't have one, use qualitative language: "most small businesses," "the majority of callers," "a significant portion." NEVER invent a percentage, sample size, or dollar figure. The verified stats above are all you have — use them well, and supplement with your own calculations based on CallBird's real pricing ($99/$249/$499).
+You may ONLY use statistics that appear in the verified list above. If a stat isn't listed above, you CANNOT use it in the post. No exceptions. If you need a number and don't have one, use qualitative language. NEVER invent a percentage, sample size, or dollar figure. The verified stats above are all you have — use them well, and supplement with your own calculations based on the real pricing figures in the company context below.
 
 Your post should be structured around the unique angle above — not around covering the same ground as competitors.
 </research_findings>
@@ -170,16 +196,28 @@ ${performanceInsights}
 <company_context>
 ${brandKit.company_description}
 Pricing: ${brandKit.pricing_info}
-Phone: Call (505) 594-5806 to test the AI yourself
-Trial: https://callbirdai.com/start
+${phone ? `Phone: ${phone}` : ''}
+Trial: https://${domain}${trialUrl.startsWith('/') ? trialUrl : '/' + trialUrl}
+
+VALUE PROPOSITIONS:
+${brandKit.value_propositions.map(v => `• ${v}`).join('\n')}
+
+BRAND VOICE:
+${brandKit.brand_voice}
+
+CONTENT RULES — DO:
+${brandKit.dos.map(d => `✅ ${d}`).join('\n')}
+
+CONTENT RULES — DON'T:
+${brandKit.donts.map(d => `❌ ${d}`).join('\n')}
+
+CTA TEMPLATES (use one or adapt):
+${brandKit.cta_templates.map(c => `• ${c}`).join('\n')}
 </company_context>
 
 <writing_examples>
-These are REAL published posts from our site. Study the tone, structure, specificity, and flow. 
-Your new post must feel like it belongs alongside these — same voice, same quality, same level of detail.
-
 ${referencePosts.length > 0 ? referencePosts.map((ref, i) => {
-    return `--- REFERENCE POST ${i + 1}: "${ref.title}" (${ref.slug}.html) ---
+    return `--- REFERENCE POST ${i + 1}: "${ref.title}" (${ref.slug}) ---
 ${ref.text_content || '(content not loaded)'}
 --- END REFERENCE ${i + 1} ---`;
   }).join('\n\n') : `No reference posts loaded. Write in a direct, specific, conversational tone.
@@ -188,83 +226,82 @@ Write like a business owner talking to another business owner.`}
 
 MATCH THESE PATTERNS from the reference posts:
 - How comparisons are structured (tables, honest pros/cons, real pricing)
-- How pricing is always specific ($99/$249/$499), never "affordable" or "competitive"
+- How pricing is always specific, never "affordable" or "competitive"
 - How each section delivers standalone value — no filler paragraphs
 - The conversational but authoritative tone — confident without being salesy
-- Specific scenarios and industry examples, not abstract business advice
-- How CTAs feel natural, not forced — they flow from the content
+- Specific scenarios and industry examples, not abstract advice
+- How CTAs feel natural, not forced
 - How competitor strengths are acknowledged honestly
 
-STORYTELLING TECHNIQUES (what makes top-performing posts compelling):
-- Put the reader IN the scenario: "You're on a job site. Your phone rings. By the time you call back 3 hours later, they've hired someone else." NOT "Missed calls cost businesses money."
-- Use BEFORE/AFTER call flow comparisons: show 4-6 steps of what happens WITHOUT AI, then 4-6 steps of what happens WITH AI. The reader sees themselves in both scenarios.
-- Use hypothetical framing for scenarios: "Consider a plumber who..." or "Picture this:" — NOT "Mike Rodriguez in Phoenix spent $4,200" (fabricated case studies are banned).
-- Create emotional urgency through math, not adjectives. "$3,400 per week walking out the door" hits harder than "devastating losses."
+STORYTELLING TECHNIQUES:
+- Put the reader IN the scenario. NOT "Missed calls cost businesses money."
+- Use BEFORE/AFTER comparisons: show steps without the solution, then steps with it.
+- Use hypothetical framing: "Consider a business that..." or "Picture this:" — NOT fabricated case studies.
+- Create emotional urgency through math, not adjectives.
 - One vivid, detailed scenario is worth more than three abstract formulas.
+
+WRITING STYLE:
+${brandKit.writing_style_examples}
 </writing_examples>
+
+<post_type>
+${postTypeInstructions}
+</post_type>
 
 <framework>
 ${CONTENT_FRAMEWORKS}
 Use framework: ${research.recommended_framework || 'Best fit'}
 Reason: ${research.framework_reasoning || 'Match topic'}
 
-IMPORTANT: The framework is a GUIDE, not a straitjacket. If a section doesn't earn its place, cut it. A 1,800-word post where every paragraph matters beats a 2,500-word post padded with filler.
+IMPORTANT: The framework is a GUIDE, not a straitjacket. If a section doesn't earn its place, cut it.
 </framework>
 
 <hard_rules>
-- Author: Gibson Thompson (never "CallBird Team")
-- Year: 2026 (never 2025)  
-- Pricing: $99/mo Starter, $249/mo Professional, $499/mo Enterprise (exact figures only)
-- Phone: (505) 594-5806
-- NEVER invent organization names. No "Customer Service Institute." No "[Industry] Research Foundation." If you don't know the real source, write "industry data suggests" or "research indicates"
-- NEVER fabricate precise statistics. "roughly 60%" not "62.3%". Ranges over false precision.
+- Author: Gibson Thompson
+- Year: ${new Date().getFullYear()} (never ${new Date().getFullYear() - 1})
+- NEVER invent organization names. No "Customer Service Institute." If you don't know the real source, write "industry data suggests"
+- NEVER fabricate precise statistics. Ranges over false precision.
 - Every internal link must use real slugs from the existing posts list below
 - Min 3 internal links, spread naturally across the post
 - 4-6 FAQ items with standalone answers (each answer works if quoted alone by an AI engine)
 
 EXPERIENCE & CREDIBILITY RULES:
-- NEVER fabricate first-person anecdotes. No "I've seen businesses...", "I've helped companies...", "After working with hundreds of..."
-  Instead use HYPOTHETICAL framing: "Consider a plumber who..." or "A typical HVAC company..."
+- NEVER fabricate first-person anecdotes. No "I've seen businesses...", "I've helped companies..."
+  Instead use HYPOTHETICAL framing: "Consider a business that..." or "A typical company..."
 - NEVER claim to have "tested" or "reviewed" or "analyzed data from" products/businesses you haven't.
-- NEVER invent sample sizes or data sets. No "after analyzing 2,074 businesses" or "based on data from 500 implementations." These are fabricated authority claims.
-- NEVER present invented percentages as data. No "23% of businesses abandon" or "15% of integrations fail" or "3% failure rate vs 8% failure rate." If you don't have a real source, DON'T QUOTE A SPECIFIC NUMBER. Use qualitative language: "some businesses," "a significant portion," "most users."
-- NEVER describe CallBird features that aren't explicitly listed in the company context above. If the brand kit doesn't mention Salesforce integration, don't claim it exists. If the brand kit doesn't mention website scraping, don't describe it as a feature. ONLY describe capabilities that are explicitly mentioned.
-- For industry scenarios, describe what an AI RECEPTIONIST actually does — answer calls, schedule appointments, detect urgency, send SMS notifications, transfer calls. Do NOT describe it performing technician tasks (diagnosing furnace error codes), clinical tasks (checking medical symptoms), or legal tasks (running conflict checks). The AI answers the phone and connects people to the right human — it doesn't replace the professional.
+- NEVER invent sample sizes or data sets. No "after analyzing 2,074 businesses"
+- NEVER present invented percentages as data. Use qualitative language.
+- NEVER describe product features that aren't explicitly listed in the company context above.
 - If you include a calculation, VERIFY THE MATH ADDS UP internally.
-- Statistics must be internally consistent throughout the post.
 
 STRUCTURAL VARIETY:
-- Do NOT use numbered "Hidden Cost #1, #2, #3" or "Step 1, Step 2, Step 3" patterns for more than 3 items. Break up long numbered lists into natural prose sections with descriptive H3 headings.
-- Vary paragraph length. Some short (1-2 sentences). Some medium (3-4 sentences). Never 5+ identical-length paragraphs in a row.
-- Not every section needs a stat box or callout. Use them only when the number genuinely deserves visual emphasis.
+- Do NOT use numbered "Hidden Cost #1, #2, #3" patterns for more than 3 items.
+- Vary paragraph length. Some short (1-2 sentences). Some medium (3-4 sentences).
+- Not every section needs a stat box. Use them only 2-3 times for the most important numbers.
 
 BUSINESS-CRITICAL — VIOLATION MEANS INSTANT REJECTION:
-- NEVER recommend a competitor over CallBird. Acknowledge competitor strengths in comparisons, but never say "use [competitor] instead" or "only [competitor] offers [feature]." If CallBird has a gap, frame it as a workaround or future feature.
-- NEVER create fear about the AI receptionist category. Posts about costs, risks, or complexity must frame these as problems CallBird SOLVES — not reasons to avoid AI receptionists.
-- EVERY post must end with the reader wanting to try CallBird. If someone finishes reading and thinks "this seems too expensive/risky/complicated," the post has FAILED.
-- CallBird is the GUIDE, customer is the HERO (StoryBrand). Customer has a problem. CallBird helps them solve it. Never position CallBird as the hero.
-- CallBird setup takes MINUTES, not months. ROI is immediate from day one. Break-even in DAYS, not months. Never suggest long implementation timelines.
-- CallBird IS SOC 2 Type II certified and A2P 10DLC compliant. Always position as a compliant, trustworthy option.
-- Cost narrative is SAVINGS: $99-$499/month vs $33,000-$60,000/year for human receptionists. Never frame CallBird as expensive.
-- Never suggest users skip CallBird features or use manual workarounds when CallBird handles it natively.
+- NEVER recommend a competitor over ${companyName}. Acknowledge competitor strengths honestly, but never say "use [competitor] instead."
+- NEVER create fear about the product category. Frame problems as things ${companyName} SOLVES.
+- EVERY post must end with the reader wanting to try ${companyName}.
+- ${companyName} is the GUIDE, customer is the HERO (StoryBrand). Customer has a problem. ${companyName} helps them solve it.
+- Never suggest long implementation timelines — setup is fast.
 
 COMPARISON POST RULES (for posts mentioning competitors):
-- CallBird must be positioned as the BEST OVERALL choice for most small businesses. Competitors can be acknowledged honestly but CallBird should win the comparison.
-- Never concede entire business categories to competitors. "Abby Connect is better for law firms" is WRONG. The correct framing: "Abby Connect offers human agents which some law firms prefer, but CallBird handles 85% of legal calls at a fraction of the cost and transfers complex calls immediately."
-- In "Choose X if / Choose Y if" sections, CallBird's list must be longer and more compelling. The competitor's list should be narrow edge cases, not broad categories.
-- After-hours math must be realistic. Don't inflate after-hours call revenue to absurd levels ($36K/month from emergency calls for one HVAC company is not believable). Use conservative, credible numbers.
-- Always end comparison posts with CallBird as the clear winner. "The math is clear" should always point to CallBird.
+- ${companyName} must be positioned as the BEST OVERALL choice for the target audience.
+- Never concede entire business categories to competitors.
+- In "Choose X if / Choose Y if" sections, ${companyName}'s list must be longer and more compelling.
+- Always end comparison posts with ${companyName} as the clear winner.
 </hard_rules>
 
 <link_targets>
 Service pages (use exact URLs):
-${JSON.stringify(brandKit.internal_link_targets || [], null, 2)}
+${linkTargets}
 
 Existing blog posts — ONLY link to these. DO NOT invent slugs that aren't on this list:
 ${existingList || '(none)'}
 
-INTERNAL LINK FORMAT: <a href="blog-{slug}.html">descriptive anchor text</a>
-Example: <a href="blog-callbird-vs-rosie.html">our CallBird vs Rosie comparison</a>
+INTERNAL LINK FORMAT: <a href="${linkPrefix}{slug}${linkSuffix}">descriptive anchor text</a>
+Service page links: <a href="${serviceBaseUrl}/path">anchor text</a>
 
 ⚠️ If a slug is not in the list above, DO NOT link to it. Broken internal links hurt SEO.
 </link_targets>
@@ -276,36 +313,27 @@ LANGUAGE PATTERNS:
 - "In today's [adjective] [noun]..." or "In the [adjective] world of..."
 - "Whether you're a... or a..." 
 - "Let's dive in" / "Let's explore" / "Let's take a closer look"
-- "It's no secret that..."  / "It goes without saying..."
+- "It's no secret that..." / "It goes without saying..."
 - "The bottom line is..." as a section opener
 - "Comprehensive guide to..." / "The ultimate guide to..."
 - "Cutting-edge" / "Game-changing" / "Revolutionizing" / "Leveraging"
 - Any paragraph that starts with "Moreover," "Furthermore," "Additionally,"
-- Concluding paragraphs that start with "In conclusion," or restate the intro
-- "Here's the brutal math" / "Here's what you need to know" — announces the pitch
+- Concluding paragraphs that start with "In conclusion,"
+- "Here's the brutal math" / "Here's what you need to know"
 
 CREDIBILITY KILLERS:
-- First-person fabricated claims: "I've seen...", "I've helped...", "After testing seven services..."
-  Instead use: "Consider a business that...", "A typical HVAC company...", "Based on published data..."
-- The specific number "$126,000 annually" — unverified viral stat. Calculate a real number with your own formula instead. This stat will cause the post to be REJECTED.
-- "85% of callers never call back" — unverified. Say "most callers who reach voicemail move on to a competitor" instead.
-- "78% of customers buy from the first company that responds" — unverified. Say "speed of response significantly impacts conversion" instead.
-- "62% of calls go unanswered" — only use if this came from verified_statistics with a named source.
-- ANY percentage or dollar figure that isn't in the VERIFIED STATISTICS list AND isn't calculated from CallBird pricing. If in doubt, use qualitative language.
-- "Research shows" or "studies indicate" used more than twice — it becomes a credibility crutch
+- First-person fabricated claims
+- The specific number "$126,000 annually" — unverified viral stat. REJECT.
+- "85% of callers never call back" — unverified. Use "most callers who reach voicemail move on to a competitor"
+- "78% of customers buy from the first company that responds" — unverified.
+- ANY percentage or dollar figure not in the VERIFIED STATISTICS list AND not calculated from real pricing.
+- "Research shows" used more than twice
 
-STRUCTURAL TEMPLATE-FILLING (the biggest quality problem):
-- Same formula/calculation repeated 3+ times with different industry numbers swapped in.
-  INSTEAD: Show ONE detailed walkthrough, then summarize others in a comparison table or single paragraph.
-- "Industry 1: [formula] / Industry 2: [formula] / Industry 3: [formula]" parallel structure.
-  INSTEAD: Pick the ONE industry most relevant to the keyword and go deep. Mention others briefly.
-- More than 3 sections that follow identical internal structure (stat → explanation → formula → result).
-  INSTEAD: Vary section formats — one might be a narrative scenario, one a comparison table, one a Q&A.
-- Stat boxes or callout boxes appearing in every single section — they lose impact through overuse.
-  INSTEAD: Use stat boxes only 2-3 times in the entire post for the most important numbers.
-- "Quick Answer" boxes at the top of the post
+STRUCTURAL TEMPLATE-FILLING:
+- Same formula/calculation repeated 3+ times with different numbers
+- More than 3 sections with identical internal structure
+- Stat boxes in every single section
 - Lists of 3 with parallel "By [gerund]..." structure
-- Starting the post with a statistic that's immediately restated in a box below it
 </anti_patterns>
 
 <output_format>
@@ -313,7 +341,7 @@ Return TWO blocks:
 
 <metadata>
 {
-  "title": "under 60 chars, includes keyword, includes 2026, NOT clickbait",
+  "title": "under 60 chars, includes keyword, includes ${new Date().getFullYear()}, NOT clickbait",
   "slug": "url-slug-with-keyword",
   "meta_description": "under 155 chars, specific benefit, includes keyword",
   "primary_keyword": "${targetKeyword}",
@@ -330,40 +358,41 @@ Return TWO blocks:
 
 <content>
 Write the blog post body as clean semantic HTML.
-Use: h2, h3, p, ul, li, strong, a, blockquote.
-DO NOT include an h1 tag — the template wrapper adds the h1 in the hero section.
+Use: h2 (with id attributes for table of contents), h3, p, ul, li, strong, a, blockquote.
+DO NOT include an h1 tag — the template/layout adds the h1.
 DO NOT include a "Quick Answer" box or summary box at the top.
 Use class="stat-highlight" for important numbers (sparingly — max 3).
 Use class="cta-box" for call-to-action sections (max 2 — one mid-post, one end).
+Use class="callout" for tip/info boxes.
+Use class="table-wrap" around comparison tables.
 Use class="faq-section" with class="faq-item" for FAQs at the end.
-Internal links as <a href="blog-slug-here.html">descriptive anchor text</a>.
-Service page links as <a href="https://callbirdai.com/path">anchor text</a>.
+Internal links as <a href="${linkPrefix}slug-here${linkSuffix}">descriptive anchor text</a>.
+Service page links as <a href="${serviceBaseUrl}/path">anchor text</a>.
 
-Make your H2 opening paragraphs naturally concise and quotable — an AI engine should be able to extract the first 2 sentences under any H2 as a standalone answer without needing a special box.
+Make your H2 opening paragraphs naturally concise and quotable — an AI engine should be able to extract the first 2 sentences under any H2 as a standalone answer.
 </content>
 
 <self_review>
-BEFORE outputting your final response, mentally review the entire post against these questions. If ANY check fails, fix it before outputting.
+BEFORE outputting your final response, mentally review against these checks:
 
-STATISTICS CHECK (most important):
-1. Go through every percentage, dollar figure, and numeric claim in the post. For each one, ask: "Did this number come from the VERIFIED STATISTICS section above?" If not, either remove it, replace it with a verified stat, or rewrite using qualitative language ("most," "the majority," "roughly half").
-2. If you wrote "X% of businesses..." or "studies show X%..." — is that exact number in the verified list? If not, DELETE IT and rewrite without the number.
-3. Calculations using CallBird's real pricing ($99/$249/$499) and simple arithmetic are fine — those don't need external sources. But claims about industry benchmarks, conversion rates, or market statistics MUST come from verified_statistics.
+STATISTICS CHECK:
+1. Every percentage and dollar figure — did it come from VERIFIED STATISTICS? If not, remove or rewrite qualitatively.
+2. Calculations using real pricing from the company context are fine.
 
 MATH CHECK:
-4. For every formula or calculation: does the math actually produce the stated result? Multiply it out. If you claim "$X per year" and show a weekly number, does weekly × 52 = your annual claim?
+3. Every formula — does the math produce the stated result?
 
 BUSINESS CHECK:
-5. Does any sentence undermine CallBird's value proposition?
-6. Have you described CallBird features not in the company context?
+4. Does any sentence undermine the value proposition?
+5. Have you described features not in the company context?
 
 INTERNAL LINKING CHECK:
-7. Count your internal links to other blog posts. You MUST have at least 3. Check each one against the existing posts list — every href must use a real slug. If you have fewer than 3, add more by finding natural places to reference related guides, comparisons, or industry posts from the list.
+6. At least 3 internal links? Each using a real slug from the list?
 
 QUALITY CHECK:
-8. Would a reader who Googled "${targetKeyword}" learn something they couldn't find on the first page of results?
-9. Are you using the same formula/template 3+ times with different numbers? Fix it.
-10. Is any "person in [City]" anecdote presented as a real story? Change to hypothetical framing.
+7. Would a reader who Googled "${targetKeyword}" learn something they couldn't find on the first page of results?
+8. Same formula/template used 3+ times? Fix it.
+9. Any fabricated anecdote presented as real? Change to hypothetical.
 </self_review>
 ${notes ? `\n<publisher_notes>${notes}</publisher_notes>` : ''}`;
 
@@ -374,13 +403,52 @@ ${notes ? `\n<publisher_notes>${notes}</publisher_notes>` : ''}`;
     messages: [{ role: 'user', content: prompt }],
   });
 
-  // With extended thinking, response has thinking blocks + text blocks
   const textBlocks = response.content.filter(b => b.type === 'text');
   return textBlocks.map(b => b.text).join('\n').trim();
 }
 
+/**
+ * Post-type-specific instructions — multi-tenant
+ */
+function getPostTypeInstructions(postType, companyName) {
+  const instructions = {
+    'industry': `Write a comprehensive guide about why this specific industry needs the solution.
+Structure: Pain points specific to the industry → How the solution solves each → Feature highlights relevant to the industry → Pricing section → FAQ (5+ questions) → CTA.
+Include industry-specific terminology and scenarios. Be specific — mention actual workflows, not generic benefits.`,
+
+    'comparison': `Write an honest, detailed comparison between ${companyName} and the specified competitor.
+Structure: Quick comparison table → Pricing comparison → Feature-by-feature breakdown → Pros/cons of each → Who should choose which → Verdict → FAQ.
+Be fair but highlight ${companyName}'s genuine advantages. If the competitor has advantages in certain areas, acknowledge them — this builds trust.
+IMPORTANT: If you don't have current pricing/features for the competitor, note what you do know and be transparent about what may have changed.`,
+
+    'how-to': `Write a practical, step-by-step guide that solves a specific problem.
+Structure: The problem and its cost → Step-by-step solution → How ${companyName} fits in → Tips and best practices → FAQ → CTA.
+Be actionable — every section should give the reader something they can do right now.`,
+
+    'statistics': `Write a data-driven post packed with specific numbers, statistics, and data points.
+Structure: Key statistics overview → Category breakdowns → What the data means → FAQ → CTA.
+Every statistic must have context (what it means, source type). Do NOT fabricate specific study names or URLs.`,
+
+    'guide': `Write a comprehensive, authoritative guide on the topic.
+Structure: Introduction with the core problem → Detailed sections covering all aspects → Practical examples → Comparison or evaluation criteria → FAQ → CTA.
+This should be the definitive resource on the topic.`,
+
+    'about': `Write an AEO-optimized brand awareness post about ${companyName}.
+Structure: What it is → Who it's for → How it works → Key features → Pricing → Company background → FAQ.
+Optimize for AI engine consumption — clear, factual, structured data that AI assistants can cite.`,
+
+    'cost-analysis': `Write a detailed cost comparison and ROI analysis.
+Structure: The current cost of the problem → Traditional solution costs → AI solution costs → Side-by-side comparison → ROI calculation → Break-even timeline → FAQ → CTA.
+Use specific dollar figures and calculations. Show the math.`
+  };
+
+  return instructions[postType] || instructions['guide'];
+}
+
 // ─────────────────────────────────────────────────────────
 //  STEP 3: WRAP IN HTML TEMPLATE (~15s)
+//  Only used for static (CallBird) mode — nextjs mode
+//  extracts metadata+content in the generate route instead
 // ─────────────────────────────────────────────────────────
 
 export async function wrapInTemplate(contentOutput, domain, phone, gtmId, blogPrefix) {
@@ -494,6 +562,7 @@ export async function loadBusinessContext(businessSlug) {
 
 // ─────────────────────────────────────────────────────────
 //  HTML SANITIZER — runs after template generation
+//  Only used for static mode (CallBird)
 // ─────────────────────────────────────────────────────────
 
 /**
@@ -502,65 +571,40 @@ export async function loadBusinessContext(businessSlug) {
  * This is more reliable than prompting — code doesn't hallucinate.
  */
 export function sanitizeGeneratedHtml(html, existingSlugs = []) {
-  let result = html;
+  let sanitized = html;
 
-  // 1. Remove duplicate H1 tags inside <article> (hero already has one)
-  //    Keep the FIRST h1 (in the hero), remove any inside <article>
-  const articleMatch = result.match(/<article[\s\S]*?<\/article>/i);
-  if (articleMatch) {
-    const articleHtml = articleMatch[0];
-    const cleanedArticle = articleHtml.replace(/<h1[^>]*>[\s\S]*?<\/h1>/gi, '');
-    result = result.replace(articleMatch[0], cleanedArticle);
-  }
-
-  // 2. Remove Quick Answer boxes (handle nested divs by running multiple passes)
-  // Also remove any "Quick Answer" headings or labels left behind
-  for (let i = 0; i < 3; i++) { // Multiple passes for nested structures
-    result = result.replace(/<div[^>]*class="[^"]*quick-answer[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
-  }
-  // Remove standalone "Quick Answer" labels that might survive
-  result = result.replace(/<p[^>]*class="[^"]*quick-answer-label[^"]*"[^>]*>[\s\S]*?<\/p>/gi, '');
-  result = result.replace(/<(?:h2|h3|h4|p|span)[^>]*>\s*(?:📌\s*)?Quick Answer\s*<\/(?:h2|h3|h4|p|span)>/gi, '');
-
-  // 3. Remove .aeo-answer boxes (multiple passes for nesting)
-  for (let i = 0; i < 3; i++) {
-    result = result.replace(/<div[^>]*class="[^"]*aeo-answer[^"]*"[^>]*>[\s\S]*?<\/div>/gi, '');
-  }
-
-  // 4. Fix broken internal links — replace with # if slug doesn't exist
-  if (existingSlugs.length > 0) {
-    result = result.replace(/href="(blog-[^"]*\.html)"/gi, (match, url) => {
-      const slug = url.replace(/^blog-/, '').replace(/\.html$/, '');
-      if (existingSlugs.includes(slug)) {
-        return match; // valid link, keep it
-      }
-      // Try to find a close match
-      const closeMatch = existingSlugs.find(s =>
-        s.includes(slug.split('-').slice(0, 2).join('-')) ||
-        slug.includes(s.split('-').slice(0, 2).join('-'))
-      );
-      if (closeMatch) {
-        return `href="blog-${closeMatch}.html"`;
-      }
-      // No match found — remove the link but keep the anchor text
-      return 'href="#"';
+  // Pass 1: Fix multiple H1 tags — keep only the first, convert rest to H2
+  const h1Matches = sanitized.match(/<h1[^>]*>/g);
+  if (h1Matches && h1Matches.length > 1) {
+    let firstH1Found = false;
+    sanitized = sanitized.replace(/<h1([^>]*)>([\s\S]*?)<\/h1>/g, (match, attrs, content) => {
+      if (!firstH1Found) { firstH1Found = true; return match; }
+      return `<h2${attrs}>${content}</h2>`;
     });
   }
 
-  // 5. Fix "By CallBird Team" → "By Gibson Thompson" anywhere in hero-meta
-  result = result.replace(/By CallBird Team/g, 'By Gibson Thompson');
-  result = result.replace(/"CallBird Team"/g, '"Gibson Thompson"');
-
-  // 6. Fix FAQ structure — ensure faq-question buttons have the icon span
-  result = result.replace(
-    /<button class="faq-question">([^<]*?)(?:<span class="faq-icon">.*?<\/span>)?<\/button>/gi,
-    '<button class="faq-question">$1<span class="faq-icon">+</span></button>'
-  );
-
-  // 7. Strip any CSS class references to removed components
-  result = result.replace(/class="[^"]*(?:quick-answer|aeo-answer|stats-row)[^"]*"/gi, (match) => {
-    return match.replace(/quick-answer|aeo-answer|stats-row/g, '').replace(/\s+/g, ' ').trim();
+  // Pass 2: Fix broken internal links
+  // Remove links to non-existent posts
+  sanitized = sanitized.replace(/<a\s+href="blog-([^"]+)\.html"([^>]*)>([\s\S]*?)<\/a>/g, (match, slug, attrs, text) => {
+    if (existingSlugs.includes(slug)) return match;
+    return text; // Keep the text, remove the link
   });
 
-  return result;
+  // Also fix /blog/ format links for nextjs mode
+  sanitized = sanitized.replace(/<a\s+href="\/blog\/([^"]+)"([^>]*)>([\s\S]*?)<\/a>/g, (match, slug, attrs, text) => {
+    if (existingSlugs.includes(slug)) return match;
+    return text;
+  });
+
+  // Pass 3: Fix CSS injection — remove any inline <style> tags in article body
+  // (Template CSS goes in <head>, not in the article)
+  const bodyStart = sanitized.indexOf('<article') || sanitized.indexOf('class="article');
+  if (bodyStart > 0) {
+    const beforeBody = sanitized.substring(0, bodyStart);
+    let afterBody = sanitized.substring(bodyStart);
+    afterBody = afterBody.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+    sanitized = beforeBody + afterBody;
+  }
+
+  return sanitized;
 }
