@@ -177,17 +177,50 @@ function analyzeGaps(existingPosts, businessSlug) {
 
   const gaps = {};
 
+  // Stop words that don't carry topic meaning
+  const STOP_WORDS = new Set([
+    'a', 'an', 'the', 'to', 'for', 'of', 'in', 'on', 'and', 'or', 'vs',
+    'is', 'are', 'was', 'were', 'be', 'been', 'being', 'how', 'what',
+    'why', 'when', 'where', 'which', 'who', 'that', 'this', 'with',
+    'from', 'your', 'you', 'our', 'their', 'its', 'can', 'do', 'does',
+    'not', 'no', 'by', 'at', 'as', 'it', 'if', 'up', 'about', 'into',
+  ]);
+
+  /**
+   * Extract meaningful words from a string (strip stop words, normalize)
+   */
+  function getContentWords(str) {
+    return str.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 1 && !STOP_WORDS.has(w));
+  }
+
+  /**
+   * Calculate what % of target's meaningful words appear in the candidate string.
+   * Returns 0-1. Requires 60%+ to consider a match.
+   */
+  function wordOverlap(targetWords, candidateStr) {
+    const candidateWords = new Set(getContentWords(candidateStr));
+    if (targetWords.length === 0) return 0;
+    const matches = targetWords.filter(w => candidateWords.has(w)).length;
+    return matches / targetWords.length;
+  }
+
+  const MATCH_THRESHOLD = 0.6; // 60% of meaningful words must match
+
   for (const [category, data] of Object.entries(map)) {
     const covered = [];
     const uncovered = [];
 
     for (const target of data.targets) {
-      const targetLower = target.toLowerCase();
-      const slugified = targetLower.replace(/[^a-z0-9]+/g, '-');
+      const targetWords = getContentWords(target);
 
-      const isCovered = existingSlugs.some(s => s.includes(slugified) || slugified.includes(s)) ||
-        existingKeywords.some(k => k.includes(targetLower) || targetLower.includes(k)) ||
-        existingTitles.some(t => t.includes(targetLower) || targetLower.includes(t));
+      // Check if any existing post covers this topic with sufficient word overlap
+      const isCovered =
+        existingSlugs.some(s => wordOverlap(targetWords, s.replace(/-/g, ' ')) >= MATCH_THRESHOLD) ||
+        existingKeywords.some(k => wordOverlap(targetWords, k) >= MATCH_THRESHOLD) ||
+        existingTitles.some(t => wordOverlap(targetWords, t) >= MATCH_THRESHOLD);
 
       if (isCovered) covered.push(target);
       else uncovered.push(target);
