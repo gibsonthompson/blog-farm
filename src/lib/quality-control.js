@@ -89,6 +89,8 @@ Review the HTML and return a JSON object with this exact structure:
     "single_h1": <true/false>,
     "has_internal_links": <true/false>,
     "min_3_internal_links": <true/false>,
+    "has_external_links": <true/false — does the post link to any authoritative external source?>,
+    "min_2_external_links": <true/false — at least 2 outbound links to non-competing authoritative sources (industry reports, major publications, government data, competitor informational pages)?>,
     "correct_phone_number": <true/false>,
     "correct_pricing": <true/false>,
     "has_cta": <true/false>,
@@ -126,11 +128,12 @@ Verdict rules:
 NOTE ON COMPETITOR MENTIONS: Comparison posts SHOULD mention competitors honestly — this builds trust and is the content strategy's explicit instruction. Only flag as a business protection issue if ${companyName} is positioned NEGATIVELY (reader finishes thinking "I should NOT use ${companyName}") or if the post actively recommends a competitor as the better choice for the target audience. Honest acknowledgment of competitor strengths while making the case for ${companyName} is GOOD content, not a violation.
 
 SCORING GUIDANCE:
+- seo: Score 8+ requires: keyword in title + first 100 words, 3+ internal links, 2+ external links to authoritative sources, clean URL slug, meta description under 160 chars. Score 6-7 if missing external links or meta issues. Below 6 if missing internal links or keyword not in title.
 - information_gain: Score 8+ ONLY if the post has a unique thesis not in top Google results. "Another comparison" = 4. "A method nobody explains" = 8.
 - aeo_readiness: Score based on these SPECIFIC criteria:
-  9-10: Every H2 section opens with a 40-60 word standalone answer block. FAQ answers work out of context. Entity clarity in first 200 words. 2+ stats per 300 words. Comparison table present (if applicable).
-  7-8: Most sections have answer blocks. FAQ answers mostly standalone. Some stats present but density could be higher.
-  5-6: Answer blocks inconsistent — some sections open with context instead of answers. FAQ answers require surrounding context. Low statistics density.
+  9-10: Every H2 section opens with a 40-60 word standalone answer block. FAQ answers work out of context. Product name + price in first 200 words. 2+ stats per 300 words. Comparison table present (if applicable). 2+ external links.
+  7-8: Most sections have answer blocks. FAQ answers mostly standalone. Some stats present but density could be higher. Product mentioned in intro.
+  5-6: Answer blocks inconsistent — some sections open with context instead of answers. FAQ answers require surrounding context. Low statistics density. No product/price in first 200 words.
   Below 5: No answer block structure. FAQ answers aren't standalone. No data points. AI engines would skip this content.
 - content_quality: Score 8+ ONLY if useful to someone who DOESN'T buy ${companyName}. Dressed-up sales pitch = 5 or below.
 - factual_accuracy: Score 5 or below if ANY named source cannot be verified. Flag ALL suspicious sources.

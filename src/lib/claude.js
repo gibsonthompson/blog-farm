@@ -291,10 +291,17 @@ IMPORTANT: The framework is a GUIDE, not a straitjacket. If a section doesn't ea
 AEO REQUIREMENTS — MANDATORY, NOT OPTIONAL:
 These rules are as important as factual accuracy. Posts that fail these will be REJECTED by QC.
 - EVERY H2 section MUST open with a 40-60 word ANSWER BLOCK. This is a direct, standalone answer to the question the heading implies. It must make sense if quoted by ChatGPT with zero surrounding context. If your first sentence under an H2 is background, context, or a transition — rewrite it as a direct answer.
-- The FIRST 200 WORDS of the article must establish: what the topic is, who it's for, what it costs or saves, and what action to take. AI engines cite the first 30% of content for 55% of responses.
+- FIRST 200 WORDS: Open per your content_strategy instructions (scenario, math, framework — whatever it says). But within those first 200 words, you MUST explicitly mention: the product name (${companyName}), at least one price point, and the target audience. AI engines cite the first 30% of content for 55% of responses — if the product and price aren't there, competitors get cited instead.
 - Include 2+ SPECIFIC DATA POINTS per 300 words of content. Use verified statistics AND pricing calculations. Sections with 3+ data points per 300 words get cited 2x more often by AI engines.
 - Every FAQ answer must START with the substantive answer in the first sentence — not "Yes" or "No" alone. The first sentence IS the answer. Supporting detail follows.
 - For ANY comparison content, include an HTML comparison TABLE near the top with clear column headers. AI engines extract these directly.
+
+EXTERNAL LINKS — REQUIRED:
+- Include 2-3 outbound links to authoritative, non-competing external sources. Examples: industry reports, government data, academic research, major publications (Forbes, HBR, Gartner), or competitor websites (for comparison posts).
+- External links signal research depth to both Google and AI engines. Pages with external links to authoritative sources consistently outrank pages without them.
+- Use target="_blank" for external links. Format: <a href="https://example.com/page" target="_blank">descriptive anchor text</a>
+- NEVER link to direct competitors' signup/pricing pages — link to their blog content, about pages, or third-party reviews instead.
+- Do NOT use rel="nofollow" on editorial external links — you WANT to pass authority signal.
 
 EXPERIENCE & CREDIBILITY RULES:
 - NEVER fabricate first-person anecdotes. No "I've seen businesses...", "I've helped companies..."
@@ -406,8 +413,9 @@ QUALITY CHECK:
 AEO CHECK — MANDATORY:
 10. Read the FIRST SENTENCE under every H2. Does each one work as a standalone answer if quoted by ChatGPT? If any H2 opens with context, background, or a transition instead of a direct answer — REWRITE IT NOW.
 11. Count your data points (statistics, pricing numbers, calculations). Do you have 2+ per 300 words? If not, add more from verified_statistics or calculate from real pricing.
-12. Do the first 200 words clearly state what, who, cost, and action? An AI engine reading only your first paragraph should know exactly what this article is about and for whom.
-13. Review the SELF-REVIEW ADDITIONS in the content_strategy section above and verify compliance.
+12. Do the first 200 words mention ${companyName} by name, at least one price point, and the target audience? If not, work them in naturally.
+13. Do you have 2-3 external links to authoritative non-competing sources? If zero — add them now. Link to industry reports, major publications, or competitor informational pages.
+14. Review the SELF-REVIEW ADDITIONS in the content_strategy section above and verify compliance.
 </self_review>
 ${notes ? `\n<publisher_notes>${notes}</publisher_notes>` : ''}`;
 
@@ -622,4 +630,91 @@ export function sanitizeGeneratedHtml(html, existingSlugs = []) {
   }
 
   return sanitized;
+}
+
+/**
+ * Programmatically inject/fix FAQPage JSON-LD schema in static HTML pages.
+ * Extracts Q&A pairs from .faq-question/.faq-answer-inner elements,
+ * then ensures the JSON-LD @graph includes a FAQPage entry.
+ * 
+ * This is a safety net — the template prompt asks Haiku to generate schema,
+ * but Haiku sometimes omits FAQPage or formats it wrong. This function
+ * guarantees correct schema every time.
+ */
+export function injectFaqSchema(html, metadata, domain, blogPrefix) {
+  // Extract FAQ Q&A pairs from the HTML
+  const faqItems = [];
+  const faqRegex = /<button[^>]*class="faq-question"[^>]*>([\s\S]*?)<\/button>\s*<div[^>]*class="faq-answer"[^>]*><div[^>]*class="faq-answer-inner"[^>]*>([\s\S]*?)<\/div><\/div>/gi;
+  let match;
+  while ((match = faqRegex.exec(html)) !== null) {
+    const question = match[1].replace(/<[^>]*>/g, '').trim();
+    const answer = match[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (question && answer) {
+      faqItems.push({ question, answer });
+    }
+  }
+
+  if (faqItems.length === 0) return html;
+
+  const faqPageSchema = {
+    '@type': 'FAQPage',
+    mainEntity: faqItems.map(faq => ({
+      '@type': 'Question',
+      name: faq.question,
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: faq.answer,
+      },
+    })),
+  };
+
+  // Check if there's already a JSON-LD script
+  const ldMatch = html.match(/<script\s+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
+
+  if (ldMatch) {
+    try {
+      const existing = JSON.parse(ldMatch[1]);
+      // If it has @graph, check for existing FAQPage
+      if (existing['@graph']) {
+        const hasFaq = existing['@graph'].some(item => item['@type'] === 'FAQPage');
+        if (!hasFaq) {
+          existing['@graph'].push(faqPageSchema);
+        } else {
+          // Replace existing FAQPage with our programmatic version (more reliable)
+          existing['@graph'] = existing['@graph'].map(item =>
+            item['@type'] === 'FAQPage' ? faqPageSchema : item
+          );
+        }
+      } else if (existing['@type'] && existing['@type'] !== 'FAQPage') {
+        // Convert single schema to @graph with FAQPage
+        const graph = { '@context': 'https://schema.org', '@graph': [existing, faqPageSchema] };
+        return html.replace(ldMatch[0], `<script type="application/ld+json">${JSON.stringify(graph)}</script>`);
+      }
+      return html.replace(ldMatch[0], `<script type="application/ld+json">${JSON.stringify(existing)}</script>`);
+    } catch {
+      // JSON parse failed — inject fresh schema before </head>
+    }
+  }
+
+  // No existing JSON-LD found or parse failed — inject before </head>
+  const today = new Date().toISOString().split('T')[0];
+  const fullSchema = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Article',
+        headline: metadata?.title || '',
+        description: metadata?.meta_description || '',
+        datePublished: today,
+        dateModified: today,
+        author: { '@type': 'Person', name: 'Gibson Thompson' },
+        publisher: { '@type': 'Organization', name: 'CallBird AI', url: `https://${domain}` },
+        mainEntityOfPage: `https://${domain}/${blogPrefix}${metadata?.slug || ''}.html`,
+      },
+      faqPageSchema,
+    ],
+  };
+
+  const schemaTag = `<script type="application/ld+json">${JSON.stringify(fullSchema)}</script>`;
+  return html.replace('</head>', `${schemaTag}\n</head>`);
 }

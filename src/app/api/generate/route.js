@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { runResearch, writeContent, wrapInTemplate, sanitizeGeneratedHtml, loadBusinessContext } from '@/lib/claude.js';
+import { runResearch, writeContent, wrapInTemplate, sanitizeGeneratedHtml, injectFaqSchema, loadBusinessContext } from '@/lib/claude.js';
 import { runQualityControl } from '@/lib/quality-control.js';
 import { validateKeywordUniqueness, validatePostUniqueness } from '@/lib/dedup-validator.js';
 import { validatePost } from '@/lib/post-validation.js';
@@ -273,6 +273,10 @@ async function handleTemplate(body, businessSlug) {
 
       // Deterministic sanitization
       html = sanitizeGeneratedHtml(rawHtml, existingSlugs);
+
+      // Programmatic FAQPage JSON-LD injection (don't rely on Haiku to generate it correctly)
+      html = injectFaqSchema(html, metadata, biz.domain, biz.blog_file_prefix);
+
       wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
 
       // Programmatic validation (CallBird-specific checks: GTM, phone, pricing)
@@ -503,6 +507,7 @@ async function handleFull(body, businessSlug) {
       const result = await wrapInTemplate(contentOutput, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix);
       metadata = result.metadata;
       html = sanitizeGeneratedHtml(result.html, existingSlugs);
+      html = injectFaqSchema(html, metadata, biz.domain, biz.blog_file_prefix);
       wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
 
       const validation = validatePost(html, metadata, existingSlugs);

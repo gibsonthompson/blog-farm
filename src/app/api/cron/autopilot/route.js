@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { recommendNextPosts } from '@/lib/content-strategist.js';
-import { runResearch, writeContent, wrapInTemplate, sanitizeGeneratedHtml, loadBusinessContext } from '@/lib/claude.js';
+import { runResearch, writeContent, wrapInTemplate, sanitizeGeneratedHtml, injectFaqSchema, loadBusinessContext } from '@/lib/claude.js';
 import { runQualityControl } from '@/lib/quality-control.js';
 import { validatePost } from '@/lib/post-validation.js';
 import { publishPost } from '@/lib/publish.js';
@@ -263,7 +263,8 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
       const { data: allExisting } = await supabase.from('blog_existing_posts').select('slug').eq('business_id', biz.id);
       const existingSlugs = (allExisting || []).map(p => p.slug);
 
-      const html = sanitizeGeneratedHtml(templateResult.html, existingSlugs);
+      let html = sanitizeGeneratedHtml(templateResult.html, existingSlugs);
+      html = injectFaqSchema(html, metadata, biz.domain, biz.blog_file_prefix);
       const validation = validatePost(html, metadata, existingSlugs, biz);
 
       if (!validation.valid) {
