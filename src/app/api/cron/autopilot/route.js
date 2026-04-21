@@ -359,7 +359,8 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
       : 'QC verdict: reject';
 
     await supabase.from('blog_generated_posts').update({
-      status: 'pending', pipeline_step: 2,
+      status: 'revision_needed', pipeline_step: 2,
+      qc_score: qcResult,
       qc_notes: JSON.stringify({ scores: qcResult.scores, held_reason: reason }),
     }).eq('id', postId);
 

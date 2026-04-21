@@ -482,7 +482,7 @@ export async function wrapInTemplate(contentOutput, domain, phone, gtmId, blogPr
   if (!contentMatch) throw new Error('No <content> in content output');
 
   let metadata;
-  try { metadata = JSON.parse(metaMatch[1].trim()); }
+  try { metadata = JSON.parse(metaMatch[1].replace(/```json\n?|```/g, '').trim()); }
   catch (e) { throw new Error(`Metadata parse failed: ${e.message}`); }
 
   const articleContent = contentMatch[1].trim();
