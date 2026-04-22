@@ -73,8 +73,11 @@ Return JSON:
   "unique_angle": "The ONE thesis that makes our post worth reading after someone has already read the top results",
   "hook": "Opening that immediately signals this post is DIFFERENT",
   "verified_statistics": [
-    {"stat": "the actual statistic", "source": "organization or publication name", "context": "what it means for our topic"},
-    {"stat": "another real stat", "source": "source name", "context": "relevance"}
+    {"stat": "the actual statistic", "source": "organization or publication name", "source_url": "the exact URL where you found this stat", "context": "what it means for our topic"},
+    {"stat": "another real stat", "source": "source name", "source_url": "exact URL", "context": "relevance"}
+  ],
+  "external_urls": [
+    {"url": "https://exact-url-from-search.com/page", "title": "Page title", "why_useful": "Why this is worth linking to from the blog post"}
   ],
   "questions_people_ask": ["Questions from PAA boxes or search suggestions"],
   "recommended_framework": "A/B/C/D/E/F/G/H",
@@ -83,7 +86,9 @@ Return JSON:
   "competitor_claims_to_verify": ["Claims competitors make without evidence"]
 }
 
-CRITICAL: The "verified_statistics" array must ONLY contain stats you actually found in search results. Include the source name for each. If you only found 2 real stats, return 2 — do NOT pad with invented numbers. Empty array is better than fake data.
+CRITICAL: The "verified_statistics" array must ONLY contain stats you actually found in search results. Include the source name AND the exact URL where you found each stat. If you only found 2 real stats, return 2 — do NOT pad with invented numbers. Empty array is better than fake data.
+
+CRITICAL: The "external_urls" array should contain 3-5 authoritative, non-competing URLs you found during research that would be valuable to link from the blog post. These are the ONLY external links the writer is allowed to use. Include government sites, industry associations, major publications, and competitor informational pages. Include the exact URL as it appeared in search results.
 
 Frameworks: A=Hidden Cost, B=Comparison, C=Industry Insider, D=Data Story, E=Step-by-Step, F=Myth Buster, G=Decision Framework, H=Expert Roundup.
 
@@ -124,7 +129,7 @@ ONLY valid JSON. No fences.`
   return {
     top_results_summary: 'Parsing failed — using training knowledge.',
     content_gaps: [], unique_angle: `Fresh perspective on ${targetKeyword}`,
-    hook: null, verified_statistics: [], questions_people_ask: [],
+    hook: null, verified_statistics: [], external_urls: [], questions_people_ask: [],
     recommended_framework: postType === 'comparison' ? 'B' : postType === 'industry' ? 'C' : 'E',
     framework_reasoning: 'Default', suggested_sections: [], competitor_claims_to_verify: [],
   };
@@ -206,10 +211,16 @@ Questions people ask: ${(research.questions_people_ask || []).join('; ')}
 Suggested sections (that NO competitor has): ${(research.suggested_sections || []).join('; ')}
 
 VERIFIED STATISTICS (from actual web search — USE THESE, do not invent your own):
-${(research.verified_statistics || []).map(s => `• ${s.stat} (Source: ${s.source}) — ${s.context}`).join('\n') || 'No verified statistics found. Use qualitative language ("most businesses," "a significant portion") instead of specific numbers.'}
+${(research.verified_statistics || []).map(s => `• ${s.stat} (Source: ${s.source}${s.source_url ? `, URL: ${s.source_url}` : ''}) — ${s.context}`).join('\n') || 'No verified statistics found. Use qualitative language ("most businesses," "a significant portion") instead of specific numbers.'}
+
+EXTERNAL URLS FROM RESEARCH (use these for outbound links — do NOT invent URLs):
+${(research.external_urls || []).map(u => `• ${u.url} — ${u.title}: ${u.why_useful}`).join('\n') || 'No external URLs found in research. Skip external links rather than fabricating them.'}
 
 STATISTICS RULE — THIS IS NON-NEGOTIABLE:
 You may ONLY use statistics that appear in the verified list above. If a stat isn't listed above, you CANNOT use it in the post. No exceptions. If you need a number and don't have one, use qualitative language. NEVER invent a percentage, sample size, or dollar figure. The verified stats above are all you have — use them well, and supplement with your own calculations based on the real pricing figures in the company context below.
+
+EXTERNAL LINK RULE — THIS IS NON-NEGOTIABLE:
+You may ONLY link to external URLs that appear in the EXTERNAL URLS list above or in the source_url fields of verified statistics. If you want to link to an external page and it's not in the research — DO NOT LINK TO IT. A post with zero external links is better than a post with fabricated URLs.
 
 Your post should be structured around the unique angle above — not around covering the same ground as competitors.
 </research_findings>
@@ -297,17 +308,25 @@ These rules are as important as factual accuracy. Posts that fail these will be 
 - For ANY comparison content, include an HTML comparison TABLE near the top with clear column headers. AI engines extract these directly.
 
 EXTERNAL LINKS — REQUIRED:
-- Include 2-3 outbound links to authoritative, non-competing external sources. Examples: industry reports, government data, academic research, major publications (Forbes, HBR, Gartner), or competitor websites (for comparison posts).
+- Include 2-3 outbound links to authoritative, non-competing external sources that appeared in your research findings. Use the EXACT URLs from the research — never construct URLs from memory.
 - External links signal research depth to both Google and AI engines. Pages with external links to authoritative sources consistently outrank pages without them.
 - Use target="_blank" for external links. Format: <a href="https://example.com/page" target="_blank">descriptive anchor text</a>
 - NEVER link to direct competitors' signup/pricing pages — link to their blog content, about pages, or third-party reviews instead.
 - Do NOT use rel="nofollow" on editorial external links — you WANT to pass authority signal.
+- If the research didn't return any external URLs worth linking, skip external links rather than inventing them. Real internal links are better than fabricated external ones.
 
 EXPERIENCE & CREDIBILITY RULES:
 - NEVER fabricate first-person anecdotes. No "I've seen businesses...", "I've helped companies..."
 - NEVER claim to have "tested" or "reviewed" products/businesses you haven't
 - NEVER invent sample sizes. No "after analyzing 2,074 businesses"
 - NEVER present invented percentages as data. Use qualitative language if no verified source.
+
+CITATION SOURCING — CRITICAL, READ CAREFULLY:
+- You may ONLY cite named organizations, studies, surveys, or reports that appear in the <research_findings> section above. Those are the ONLY verified sources you have.
+- If a claim has no source in the research findings, state it as an observation or industry pattern — NEVER attach a named organization to it. "Agency owners consistently report..." is fine. "According to HubSpot's 2025 Agency Survey..." is FABRICATION if that survey is not in your research findings.
+- Your training data is NOT a source. You do not "know" what Gartner, HubSpot, McKinsey, or Forrester published. You only know what the research step found and verified via web search.
+- When citing external sources from research, use the exact URL the research provided. Do NOT guess at URLs or construct them from memory.
+- If you want to strengthen a claim and have no research source for it, use the math instead. Show the calculation. Math is verifiable without a citation.
 
 STRUCTURAL VARIETY:
 - Vary paragraph length. Some short (1-2 sentences). Some medium (3-4 sentences).
@@ -395,6 +414,10 @@ STATISTICS CHECK:
 1. Every percentage and dollar figure — did it come from VERIFIED STATISTICS? If not, remove or rewrite qualitatively.
 2. Calculations using real pricing from the company context are fine.
 
+CITATION SOURCE CHECK — CRITICAL:
+3. Scan every named organization, study, survey, or report in your post. Does EACH ONE appear in the <research_findings> above? If you cited "HubSpot," "Gartner," "McKinsey," "Forrester," or ANY named source that is NOT in the research — DELETE THE CITATION NOW. Replace with qualitative language ("industry data suggests..." or "agency owners consistently report...") or prove the claim with math instead.
+4. Scan every external URL. Did it come from the research findings? If you constructed a URL from memory — DELETE IT. Broken or fabricated links are worse than no link.
+
 MATH CHECK:
 3. Every formula — does the math produce the stated result?
 
@@ -414,7 +437,7 @@ AEO CHECK — MANDATORY:
 10. Read the FIRST SENTENCE under every H2. Does each one work as a standalone answer if quoted by ChatGPT? If any H2 opens with context, background, or a transition instead of a direct answer — REWRITE IT NOW.
 11. Count your data points (statistics, pricing numbers, calculations). Do you have 2+ per 300 words? If not, add more from verified_statistics or calculate from real pricing.
 12. Do the first 200 words mention ${companyName} by name, at least one price point, and the target audience? If not, work them in naturally.
-13. Do you have 2-3 external links to authoritative non-competing sources? If zero — add them now. Link to industry reports, major publications, or competitor informational pages.
+13. Do you have external links? If yes — does EVERY external URL come from the research findings? If you typed any URL from memory — DELETE IT NOW. If research provided no external URLs, skip external links entirely.
 14. Review the SELF-REVIEW ADDITIONS in the content_strategy section above and verify compliance.
 </self_review>
 ${notes ? `\n<publisher_notes>${notes}</publisher_notes>` : ''}`;
