@@ -8,7 +8,6 @@ import supabase from './supabase.js';
  * - Auto-suggest next available publish date
  */
 
-const MAX_POSTS_PER_WEEK = 3;
 const MIN_DAYS_BETWEEN = 1;
 const MAX_SAME_TYPE_CONSECUTIVE = 2;
 
@@ -32,19 +31,7 @@ export async function checkPublishCadence(businessId, postCategory) {
 
   const posts = recentPosts || [];
 
-  // Rule 1: Max posts per week
-  if (posts.length >= MAX_POSTS_PER_WEEK) {
-    const oldestThisWeek = posts[posts.length - 1];
-    const nextAvailable = new Date(oldestThisWeek.publish_date);
-    nextAvailable.setDate(nextAvailable.getDate() + 8);
-    return {
-      allowed: false,
-      reason: `Already published ${posts.length} posts this week (max ${MAX_POSTS_PER_WEEK}). Next available: ${formatDate(nextAvailable)}`,
-      suggestedDate: formatDate(nextAvailable),
-    };
-  }
-
-  // Rule 2: Min days between publishes
+  // Rule 1: Min days between publishes
   if (posts.length > 0) {
     const lastPublish = new Date(posts[0].publish_date);
     const daysSince = Math.floor((now - lastPublish) / (1000 * 60 * 60 * 24));
@@ -59,7 +46,7 @@ export async function checkPublishCadence(businessId, postCategory) {
     }
   }
 
-  // Rule 3: Consecutive same-type check
+  // Rule 2: Consecutive same-type check
   if (posts.length >= MAX_SAME_TYPE_CONSECUTIVE) {
     const lastTypes = posts.slice(0, MAX_SAME_TYPE_CONSECUTIVE).map(p => p.category);
     const allSameType = lastTypes.every(t => t === postCategory);
@@ -67,7 +54,7 @@ export async function checkPublishCadence(businessId, postCategory) {
       return {
         allowed: false,
         reason: `Last ${MAX_SAME_TYPE_CONSECUTIVE} posts were all "${postCategory}" type. Publish a different post type first to maintain variety.`,
-        suggestedDate: formatDate(now), // Can publish today, just different type
+        suggestedDate: formatDate(now),
       };
     }
   }
@@ -93,7 +80,7 @@ export function calculateBatchDates(count, categories = [], startDate = null) {
 
   let scheduled = 0;
   let weekCount = 0;
-  const maxWeeks = Math.ceil(count / MAX_POSTS_PER_WEEK) + 2; // Safety limit
+  const maxWeeks = Math.ceil(count / 3) + 2; // Safety limit
 
   while (scheduled < count && weekCount < maxWeeks) {
     for (const dayOfWeek of publishDays) {
