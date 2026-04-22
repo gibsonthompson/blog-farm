@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 const BUSINESSES = [
   { slug: 'callbird', name: 'CallBird AI', color: '#F6B828', bg: '#122092', domain: 'callbirdai.com', linkFormat: 'static' },
   { slug: 'voiceai-connect', name: 'VoiceAI Connect', color: '#10b981', bg: '#064E3B', domain: 'myvoiceaiconnect.com', linkFormat: 'nextjs' },
+  { slug: 'gtc-group', name: 'The GTC Group', color: '#c9a227', bg: '#0f172a', domain: 'globaltransportconsultinggroup.com', linkFormat: 'nextjs' },
 ];
 
 const STATUS_COLORS = {
@@ -23,9 +24,12 @@ const POST_TYPES = [
   { value: 'guide', label: 'Comprehensive Guide', desc: 'Definitive resource on a topic' },
   { value: 'cost-analysis', label: 'Cost Analysis', desc: 'ROI and cost comparison' },
   { value: 'about', label: 'Brand / AEO', desc: 'AEO-optimized brand awareness' },
+  { value: 'cost-reduction', label: 'Cost Reduction', desc: 'Cost savings analysis' },
+  { value: 'revenue-growth', label: 'Revenue Growth', desc: 'Revenue optimization' },
+  { value: 'brand-marketing', label: 'Brand & Marketing', desc: 'Online presence & branding' },
+  { value: 'industry-analysis', label: 'Industry Analysis', desc: 'Market trends & outlook' },
 ];
 
-// Estimated costs per step (Sonnet 4: $3/1M in, $15/1M out)
 const STEP_COSTS = {
   research: { est: 0.05, label: 'Research + Web Search' },
   write: { est: 0.35, label: 'Write Content + Thinking' },
@@ -47,6 +51,7 @@ export default function Dashboard() {
   const [recs, setRecs] = useState(null);
   const [recsLoading, setRecsLoading] = useState(false);
   const [runCost, setRunCost] = useState(0);
+  const [expandedNotes, setExpandedNotes] = useState(null);
 
   const [keyword, setKeyword] = useState('');
   const [postType, setPostType] = useState('guide');
@@ -70,6 +75,7 @@ export default function Dashboard() {
     setRecs(null);
     setGenResult(null);
     setRunCost(0);
+    setExpandedNotes(null);
   }, [fetchPosts]);
 
   function switchBusiness(slug) {
@@ -131,7 +137,6 @@ export default function Dashboard() {
     let totalCost = 0;
 
     try {
-      // Step 1: Research
       setGenStep('🔍 Researching topic & finding real statistics...');
       const step1 = await callStep('research', {
         targetKeyword: keyword.trim(), postType, notes: notes.trim(),
@@ -140,13 +145,11 @@ export default function Dashboard() {
       setRunCost(totalCost);
       const postId = step1.postId;
 
-      // Step 2: Write content
       setGenStep(`✍️ Writing content (${step1.research?.verifiedStats || 0} verified stats, ${step1.research?.gaps || 0} gaps found)...`);
       await callStep('write', { postId });
       totalCost += STEP_COSTS.write.est;
       setRunCost(totalCost);
 
-      // Step 3: Template
       const templateKey = activeBiz.linkFormat === 'nextjs' ? 'template_nextjs' : 'template_static';
       setGenStep(activeBiz.linkFormat === 'nextjs' ? '📦 Extracting metadata...' : '🏗️ Building HTML & running validation...');
       const step3 = await callStep('template', { postId });
@@ -169,7 +172,6 @@ export default function Dashboard() {
         return;
       }
 
-      // Step 4: Quality control
       setGenStep('✅ Running quality control (32 checks)...');
       const step4 = await callStep('qc', { postId });
       totalCost += STEP_COSTS.qc.est;
@@ -239,6 +241,29 @@ export default function Dashboard() {
     return `https://${activeBiz.domain}/blog-${post.slug}.html`;
   }
 
+  function parseQcNotes(post) {
+    const result = { heldReason: null, hallucinations: [], bizFlags: [], validationErrors: [], scores: null };
+    
+    // From qc_score (set by autopilot)
+    if (post.qc_score) {
+      result.hallucinations = post.qc_score.hallucination_flags || [];
+      result.bizFlags = post.qc_score.business_protection_flags || [];
+      result.scores = post.qc_score.scores || post.qc_score;
+    }
+
+    // From qc_notes (JSON string with held_reason, validation_errors, etc.)
+    if (post.qc_notes) {
+      try {
+        const notes = typeof post.qc_notes === 'string' ? JSON.parse(post.qc_notes) : post.qc_notes;
+        result.heldReason = notes.held_reason || null;
+        result.validationErrors = notes.validation_errors || [];
+        if (notes.scores) result.scores = notes.scores;
+      } catch { /* ignore parse errors */ }
+    }
+
+    return result;
+  }
+
   const publishedCount = posts.filter(p => p.status === 'published').length;
   const pendingCount = posts.filter(p => ['pending', 'revision_needed'].includes(p.status)).length;
 
@@ -247,7 +272,7 @@ export default function Dashboard() {
       {/* Header */}
       <header style={styles.header}>
         <div style={styles.headerInner}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <h1 style={styles.logo}>Blog Automation</h1>
             <div style={styles.bizSelector}>
               {BUSINESSES.map(biz => (
@@ -301,7 +326,7 @@ export default function Dashboard() {
 
         {/* AI Strategy Section */}
         <section style={styles.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
             <h2 style={styles.cardTitle}>Content Strategy — {activeBiz.name}</h2>
             <button onClick={fetchRecommendations} style={{ ...styles.generateBtn, background: activeBiz.bg }} disabled={recsLoading}>
               {recsLoading ? '⏳ Analyzing Gaps...' : '🧠 Get AI Recommendations'}
@@ -407,7 +432,6 @@ export default function Dashboard() {
             </div>
           </form>
 
-          {/* Cost breakdown */}
           {!generating && runCost > 0 && (
             <div style={{ marginTop: 12, padding: '8px 12px', background: '#0F172A', borderRadius: 6, fontSize: 12, color: '#64748B' }}>
               💰 Estimated run cost: <strong style={{ color: '#F8FAFC' }}>${runCost.toFixed(2)}</strong>
@@ -425,7 +449,7 @@ export default function Dashboard() {
                 <>
                   <strong style={{ color: '#FCA5A5' }}>⚠️ Duplicate Detected:</strong> {genResult.dedup?.recommendation}
                   <div style={{ marginTop: 4, fontSize: 13, color: '#FECACA' }}>
-                    Slug "{genResult.post?.slug}" already exists. Try a different keyword angle.
+                    Slug &quot;{genResult.post?.slug}&quot; already exists. Try a different keyword angle.
                   </div>
                 </>
               ) : genResult.validationFailed ? (
@@ -485,6 +509,10 @@ export default function Dashboard() {
             <div style={styles.postsList}>
               {posts.map(post => {
                 const statusInfo = STATUS_COLORS[post.status] || STATUS_COLORS.pending;
+                const qcInfo = parseQcNotes(post);
+                const hasNotes = qcInfo.heldReason || qcInfo.hallucinations.length > 0 || qcInfo.bizFlags.length > 0 || qcInfo.validationErrors.length > 0;
+                const isExpanded = expandedNotes === post.id;
+
                 return (
                   <div key={post.id} style={styles.postRow}>
                     <div style={styles.postInfo}>
@@ -502,6 +530,67 @@ export default function Dashboard() {
                         {post.qc_score?.overall && <span>QC: {post.qc_score.overall}/10</span>}
                         <span>{new Date(post.created_at).toLocaleDateString()}</span>
                       </div>
+
+                      {/* QC Scores row */}
+                      {qcInfo.scores && (
+                        <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                          {Object.entries(qcInfo.scores).filter(([k]) => k !== 'overall').map(([key, val]) => (
+                            <span key={key} style={{
+                              fontSize: 11, padding: '2px 6px', borderRadius: 4,
+                              background: val >= 7 ? '#064E3B' : val >= 5 ? '#78350F' : '#7F1D1D',
+                              color: val >= 7 ? '#34D399' : val >= 5 ? '#FBBF24' : '#FCA5A5',
+                            }}>
+                              {key.replace(/_/g, ' ')}: {val}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Hold reason badge */}
+                      {qcInfo.heldReason && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: '#FBBF24', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          ⚠️ <span>Held: {qcInfo.heldReason}</span>
+                        </div>
+                      )}
+
+                      {/* Expandable QC details */}
+                      {hasNotes && (
+                        <button
+                          onClick={() => setExpandedNotes(isExpanded ? null : post.id)}
+                          style={{ background: 'none', border: 'none', color: '#64748B', fontSize: 12, cursor: 'pointer', marginTop: 4, padding: 0, textDecoration: 'underline' }}
+                        >
+                          {isExpanded ? '▾ Hide QC details' : '▸ Show QC details'}
+                        </button>
+                      )}
+
+                      {isExpanded && (
+                        <div style={{ marginTop: 8, padding: 12, background: '#0F172A', borderRadius: 6, fontSize: 12, lineHeight: 1.6 }}>
+                          {qcInfo.hallucinations.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <strong style={{ color: '#FCA5A5' }}>⚠️ Hallucination Flags:</strong>
+                              {qcInfo.hallucinations.map((h, i) => (
+                                <div key={i} style={{ color: '#FDA4AF', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #7F1D1D' }}>{h}</div>
+                              ))}
+                            </div>
+                          )}
+                          {qcInfo.bizFlags.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <strong style={{ color: '#FBBF24' }}>🛡️ Business Protection Flags:</strong>
+                              {qcInfo.bizFlags.map((f, i) => (
+                                <div key={i} style={{ color: '#FDE68A', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #78350F' }}>{f}</div>
+                              ))}
+                            </div>
+                          )}
+                          {qcInfo.validationErrors.length > 0 && (
+                            <div>
+                              <strong style={{ color: '#FCA5A5' }}>⛔ Validation Errors:</strong>
+                              {qcInfo.validationErrors.map((e, i) => (
+                                <div key={i} style={{ color: '#FDA4AF', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #7F1D1D' }}>{typeof e === 'string' ? e : e.message || JSON.stringify(e)}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div style={styles.postActions}>
                       <button onClick={() => handlePreview(post.id)} style={styles.actionBtn}>👁 Preview</button>
@@ -563,7 +652,7 @@ const styles = {
   header: { background: '#1E293B', borderBottom: '1px solid #334155', padding: '16px 24px' },
   headerInner: { maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 },
   logo: { fontSize: 20, fontWeight: 700, color: '#F8FAFC', margin: 0 },
-  bizSelector: { display: 'flex', gap: 4 },
+  bizSelector: { display: 'flex', gap: 4, flexWrap: 'wrap' },
   bizTab: { border: '1px solid', borderRadius: 6, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' },
   badge: { padding: '4px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   main: { maxWidth: 1200, margin: '0 auto', padding: '24px 24px 80px' },
