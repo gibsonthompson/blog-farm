@@ -147,6 +147,17 @@ export async function writeContent(brandKit, existingPosts, research, postType, 
   const phone = biz?.phone;
   const trialUrl = brandKit?.cta_templates?.[0]?.split('→')?.[1]?.trim() || `/signup`;
 
+  // Extract author name from content_strategy (look for "Author is ALWAYS X" pattern)
+  // Falls back to "Gibson Thompson" for CallBird/VoiceAI Connect
+  let authorName = 'Gibson Thompson';
+  let authorTitle = 'Founder';
+  const authorMatch = (brandKit?.content_strategy || '').match(/Author is ALWAYS\s+([^,.\n]+)/i);
+  if (authorMatch) {
+    authorName = authorMatch[1].trim();
+    const titleMatch = (brandKit?.content_strategy || '').match(/Author is ALWAYS\s+[^,]+,\s*([^.\n]+)/i);
+    if (titleMatch) authorTitle = titleMatch[1].trim();
+  }
+
   // Internal link format depends on publish mode
   const linkPrefix = publishMode === 'nextjs' ? '/blog/' : 'blog-';
   const linkSuffix = publishMode === 'nextjs' ? '' : '.html';
@@ -170,7 +181,7 @@ export async function writeContent(brandKit, existingPosts, research, postType, 
   // Build post type instructions dynamically
   const postTypeInstructions = getPostTypeInstructions(postType, companyName);
 
-  const prompt = `<role>You are Gibson Thompson, founder of ${companyName}. You write like a business owner who's obsessed with the specific problem this post addresses — not like a content marketer filling a keyword slot. Before writing a single word, ask yourself: "If someone has already read the top 3 Google results for this keyword, what does THIS post tell them that those didn't?" If you can't answer that, you need a different angle.</role>
+  const prompt = `<role>You are ${authorName}, ${authorTitle} of ${companyName}. You write like a business owner who's obsessed with the specific problem this post addresses — not like a content marketer filling a keyword slot. Before writing a single word, ask yourself: "If someone has already read the top 3 Google results for this keyword, what does THIS post tell them that those didn't?" If you can't answer that, you need a different angle.</role>
 
 <audience>${brandKit.target_audience}</audience>
 
@@ -287,7 +298,7 @@ IMPORTANT: The framework is a GUIDE, not a straitjacket. If a section doesn't ea
 </framework>
 
 <hard_rules>
-- Author: Gibson Thompson
+- Author: ${authorName}${authorName !== 'Gibson Thompson' ? ` (NOT Gibson Thompson — this business has a different author)` : ''}
 - Year: ${new Date().getFullYear()} (never ${new Date().getFullYear() - 1})
 - NEVER invent organization names. If you don't know the real source, write "industry data suggests"
 - NEVER fabricate precise statistics. Ranges over false precision.
@@ -664,7 +675,7 @@ export function sanitizeGeneratedHtml(html, existingSlugs = []) {
  * but Haiku sometimes omits FAQPage or formats it wrong. This function
  * guarantees correct schema every time.
  */
-export function injectFaqSchema(html, metadata, domain, blogPrefix) {
+export function injectFaqSchema(html, metadata, domain, blogPrefix, authorName = 'Gibson Thompson', publisherName = 'CallBird AI') {
   // Extract FAQ Q&A pairs from the HTML
   const faqItems = [];
   const faqRegex = /<button[^>]*class="faq-question"[^>]*>([\s\S]*?)<\/button>\s*<div[^>]*class="faq-answer"[^>]*><div[^>]*class="faq-answer-inner"[^>]*>([\s\S]*?)<\/div><\/div>/gi;
@@ -730,8 +741,8 @@ export function injectFaqSchema(html, metadata, domain, blogPrefix) {
         description: metadata?.meta_description || '',
         datePublished: today,
         dateModified: today,
-        author: { '@type': 'Person', name: 'Gibson Thompson' },
-        publisher: { '@type': 'Organization', name: 'CallBird AI', url: `https://${domain}` },
+        author: { '@type': 'Person', name: authorName },
+        publisher: { '@type': 'Organization', name: publisherName, url: `https://${domain}` },
         mainEntityOfPage: `https://${domain}/${blogPrefix}${metadata?.slug || ''}.html`,
       },
       faqPageSchema,

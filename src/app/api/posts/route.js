@@ -16,7 +16,7 @@ export async function GET(request) {
 
   let query = supabase
     .from('blog_generated_posts')
-    .select('id, title, slug, primary_keyword, category, status, qc_score, qc_passed, created_at, publish_date, word_count, emoji, read_time')
+    .select('id, title, slug, primary_keyword, category, status, qc_score, qc_notes, qc_passed, created_at, publish_date, word_count, emoji, read_time')
     .eq('business_id', biz.id)
     .order('created_at', { ascending: false });
 
@@ -26,19 +26,4 @@ export async function GET(request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ posts });
-}
-
-export async function DELETE(request) {
-  const { searchParams } = new URL(request.url);
-  const postId = searchParams.get('id');
-
-  if (!postId) return NextResponse.json({ error: 'id required' }, { status: 400 });
-
-  const { error } = await supabase
-    .from('blog_generated_posts')
-    .delete()
-    .eq('id', postId);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ success: true });
 }
