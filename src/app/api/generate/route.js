@@ -5,7 +5,6 @@ import { validateKeywordUniqueness, validatePostUniqueness } from '@/lib/dedup-v
 import { validatePost } from '@/lib/post-validation.js';
 import supabase from '@/lib/supabase.js';
 
-// Fluid Compute on Hobby allows up to 300s — AI API I/O doesn't count as CPU time
 export const maxDuration = 300;
 
 /**
@@ -56,7 +55,6 @@ async function handleResearch(body, businessSlug) {
     .from('blog_businesses').select('*').eq('slug', businessSlug).single();
   if (!biz) return NextResponse.json({ error: 'Business not found' }, { status: 404 });
 
-  // ── CLEANUP stale records for this slug BEFORE dedup ──
   const baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
   const { data: existingRecords } = await supabase.from('blog_generated_posts')
     .select('id, title, status').eq('business_id', biz.id).eq('slug', baseSlug);
@@ -76,7 +74,6 @@ async function handleResearch(body, businessSlug) {
     }
   }
 
-  // Dedup gate (now only catches real conflicts — published posts + blog_existing_posts)
   console.log(`[blog-farm] Running dedup check... (${Date.now() - stepStart}ms)`);
   const preCheck = await validateKeywordUniqueness(biz.id, targetKeyword, postType);
   console.log(`[blog-farm] Dedup done (${Date.now() - stepStart}ms)`);
@@ -87,11 +84,9 @@ async function handleResearch(body, businessSlug) {
     }, { status: 409 });
   }
 
-  // Research — pass business context for multi-tenant prompts
   console.log(`[blog-farm] Starting web research... (${Date.now() - stepStart}ms)`);
   const startTime = Date.now();
 
-  // Load brand kit for research context
   const { data: brandKit } = await supabase
     .from('blog_brand_kits').select('*').eq('business_id', biz.id).single();
 
@@ -105,7 +100,6 @@ async function handleResearch(body, businessSlug) {
   console.log(`[blog-farm] Research complete (${Date.now() - stepStart}ms total)`);
   const duration = Date.now() - startTime;
 
-  // Create post record (slug already cleaned up before dedup check)
   const { data: post, error } = await supabase
     .from('blog_generated_posts')
     .insert({
@@ -124,7 +118,6 @@ async function handleResearch(body, businessSlug) {
 
   if (error) return NextResponse.json({ error: `DB insert failed: ${error.message}` }, { status: 500 });
 
-  // Log research step
   await supabase.from('blog_generation_logs').insert({
     post_id: post.id, step: 'research', status: 'success',
     details: { target_keyword: targetKeyword, framework: research.recommended_framework,
@@ -148,7 +141,6 @@ async function handleWrite(body, businessSlug) {
   if (!postId) return NextResponse.json({ error: 'postId is required' }, { status: 400 });
 
   try {
-    // Load post and context
     const { data: post, error: postErr } = await supabase
       .from('blog_generated_posts').select('*').eq('id', postId).single();
     if (postErr || !post) return NextResponse.json({ error: `Post not found: ${postErr?.message}` }, { status: 404 });
@@ -165,7 +157,6 @@ async function handleWrite(body, businessSlug) {
     }
     const { research, notes, targetKeyword, postType } = promptData;
 
-    // Write content — pass biz for publish_mode awareness
     const startTime = Date.now();
     const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, notes, referencePosts, biz);
     const duration = Date.now() - startTime;
@@ -174,13 +165,11 @@ async function handleWrite(body, businessSlug) {
       return NextResponse.json({ error: `Content generation returned empty or too short (${(contentOutput || '').length} chars)` }, { status: 500 });
     }
 
-    // Save raw content to post (will be replaced with HTML in step 3)
     await supabase.from('blog_generated_posts').update({
       html_content: contentOutput,
       updated_at: new Date().toISOString(),
     }).eq('id', postId);
 
-    // Log
     await supabase.from('blog_generation_logs').insert({
       post_id: postId, step: 'write_content', status: 'success',
       details: { model: 'claude-sonnet-4-20250514', content_length: contentOutput.length },
@@ -195,8 +184,6 @@ async function handleWrite(body, businessSlug) {
 }
 
 // ── STEP 3: HTML Template + Post-Dedup ──
-// For static (CallBird): wraps in full HTML page, sanitizes, validates
-// For nextjs (VoiceAI Connect): extracts metadata, stores raw article body, skips template
 
 async function handleTemplate(body, businessSlug) {
   const { postId } = body;
@@ -214,7 +201,6 @@ async function handleTemplate(body, businessSlug) {
     const publishMode = biz.publish_mode || 'static';
     const startTime = Date.now();
 
-    // ── LOAD EXISTING SLUGS (shared) ──
     const { data: allExisting } = await supabase.from('blog_existing_posts')
       .select('slug').eq('business_id', biz.id);
     const existingSlugs = (allExisting || []).map(p => p.slug);
@@ -222,11 +208,8 @@ async function handleTemplate(body, businessSlug) {
     let metadata, html, wordCount;
 
     if (publishMode === 'nextjs') {
-      // ── NEXTJS MODE: Extract metadata + raw article body ──
-      // Step 2 output format: <metadata>{JSON}</metadata>\n<content>...article HTML...</content>
       const raw = post.html_content;
 
-      // Extract metadata JSON
       const metaMatch = raw.match(/<metadata>\s*([\s\S]*?)\s*<\/metadata>/);
       if (metaMatch) {
         try {
@@ -238,48 +221,35 @@ async function handleTemplate(body, businessSlug) {
         metadata = { title: post.title, slug: post.slug, meta_description: '', primary_keyword: post.primary_keyword };
       }
 
-      // Extract article HTML (between <content> tags, or everything after </metadata>)
       const contentMatch = raw.match(/<content>\s*([\s\S]*?)\s*<\/content>/);
       if (contentMatch) {
         html = contentMatch[1].trim();
       } else {
-        // Fallback: strip metadata block, use the rest
         html = raw.replace(/<metadata>[\s\S]*?<\/metadata>/, '').trim();
       }
 
-      // Strip accidental full-page wrapper (<!DOCTYPE, <html>, <body>) — keep only article content
       html = html.replace(/<!DOCTYPE[^>]*>/gi, '')
         .replace(/<\/?html[^>]*>/gi, '')
         .replace(/<head>[\s\S]*?<\/head>/gi, '')
         .replace(/<\/?body[^>]*>/gi, '')
         .trim();
-
-      // Fix internal link format: convert blog-{slug}.html → /blog/{slug} for nextjs
       html = html.replace(/href="blog-([^"]+)\.html"/gi, 'href="/blog/$1"');
-
-      // Strip self-review checklist if Claude included it in the content
       html = html.replace(/\*\*STATISTICS CHECK[\s\S]*$/, '').trim();
       html = html.replace(/<self_review>[\s\S]*?<\/self_review>/gi, '').trim();
 
       wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
 
     } else {
-      // ── STATIC MODE: Full HTML template wrapping (CallBird) ──
       const result = await wrapInTemplate(
         post.html_content, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix
       );
       metadata = result.metadata;
       const rawHtml = result.html;
 
-      // Deterministic sanitization
       html = sanitizeGeneratedHtml(rawHtml, existingSlugs);
-
-      // Programmatic FAQPage JSON-LD injection (don't rely on Haiku to generate it correctly)
       html = injectFaqSchema(html, metadata, biz.domain, biz.blog_file_prefix);
-
       wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
 
-      // Programmatic validation (CallBird-specific checks: GTM, phone, pricing)
       const validation = validatePost(html, metadata, existingSlugs);
 
       if (!validation.valid) {
@@ -288,6 +258,7 @@ async function handleTemplate(body, businessSlug) {
           slug: metadata.slug,
           html_content: html,
           word_count: wordCount,
+          category: metadata.category || post.category,
           status: 'revision_needed',
           qc_notes: JSON.stringify({ validation_errors: validation.errors, validation_warnings: validation.warnings }),
           updated_at: new Date().toISOString(),
@@ -303,13 +274,14 @@ async function handleTemplate(body, businessSlug) {
 
     const duration = Date.now() - startTime;
 
-    // ── SHARED: Update post with metadata + content ──
+    // FIX: Save category from writer metadata, fall back to post's original category
     await supabase.from('blog_generated_posts').update({
       title: metadata.title,
       slug: metadata.slug,
       meta_description: metadata.meta_description,
       primary_keyword: metadata.primary_keyword,
       secondary_keywords: metadata.secondary_keywords || [],
+      category: metadata.category || post.category,
       read_time: metadata.read_time,
       emoji: metadata.emoji,
       excerpt: metadata.excerpt,
@@ -318,7 +290,6 @@ async function handleTemplate(body, businessSlug) {
       updated_at: new Date().toISOString(),
     }).eq('id', postId);
 
-    // ── SHARED: Track content attributes ──
     try {
       const { extractContentAttributes } = await import('@/lib/performance.js');
       const attrs = extractContentAttributes(html, metadata, null);
@@ -328,7 +299,6 @@ async function handleTemplate(body, businessSlug) {
       console.warn('[blog-farm] Attribute tracking failed (non-blocking):', attrErr.message);
     }
 
-    // ── SHARED: Post-generation dedup check ──
     const postCheck = await validatePostUniqueness(biz.id, metadata.title, metadata.primary_keyword, metadata.slug);
     if (!postCheck.unique) {
       await supabase.from('blog_generated_posts').update({
@@ -342,7 +312,6 @@ async function handleTemplate(body, businessSlug) {
       });
     }
 
-    // Log
     await supabase.from('blog_generation_logs').insert({
       post_id: postId, step: 'html_template', status: 'success',
       details: { word_count: wordCount, publish_mode: publishMode,
@@ -376,7 +345,6 @@ async function handleQC(body, businessSlug) {
 
     const qcResult = await runQualityControl(postId, biz, brandKit);
 
-    // ── UPDATE CONTENT ATTRIBUTES with QC scores ──
     try {
       await supabase.from('blog_post_attributes').upsert({
         post_id: postId,
@@ -418,14 +386,12 @@ async function handleFull(body, businessSlug) {
   const steps = [];
 
   try {
-    // Load business
     const { data: biz } = await supabase
       .from('blog_businesses').select('*').eq('slug', businessSlug).single();
     if (!biz) return NextResponse.json({ error: `Business "${businessSlug}" not found` }, { status: 404 });
 
     const publishMode = biz.publish_mode || 'static';
 
-    // ── CLEANUP stale records for this slug BEFORE dedup ──
     const baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').substring(0, 80);
     const { data: existingRecords } = await supabase.from('blog_generated_posts')
       .select('id, title, status').eq('business_id', biz.id).eq('slug', baseSlug);
@@ -437,7 +403,6 @@ async function handleFull(body, businessSlug) {
           error: `Slug "${baseSlug}" already published as "${live[0].title}".`,
         }, { status: 409 });
       }
-      // Remove stale attempts (pending, failed, revision_needed, generating)
       const deadIds = existingRecords.map(r => r.id);
       if (deadIds.length) {
         await supabase.from('blog_generation_logs').delete().in('post_id', deadIds);
@@ -445,7 +410,6 @@ async function handleFull(body, businessSlug) {
       }
     }
 
-    // ── STEP 1: Dedup (checks blog_existing_posts + live generated posts) + Research ──
     const preCheck = await validateKeywordUniqueness(biz.id, targetKeyword, postType);
     if (!preCheck.safe) {
       return NextResponse.json({
@@ -460,7 +424,6 @@ async function handleFull(body, businessSlug) {
     const research = await runResearch(targetKeyword, postType, biz, brandKit);
     steps.push({ step: 'research', status: 'success', verifiedStats: (research.verified_statistics || []).length, gaps: (research.content_gaps || []).length, elapsed: `${Date.now() - startTime}ms` });
 
-    // Create post record
     const { data: post } = await supabase.from('blog_generated_posts').insert({
       business_id: biz.id, title: `[Generating] ${targetKeyword}`, slug: baseSlug,
       primary_keyword: targetKeyword, category: postType,
@@ -514,7 +477,8 @@ async function handleFull(body, businessSlug) {
       if (!validation.valid) {
         await supabase.from('blog_generated_posts').update({
           title: metadata.title, slug: metadata.slug, html_content: html,
-          word_count: wordCount, status: 'revision_needed',
+          word_count: wordCount, category: metadata.category || postType,
+          status: 'revision_needed',
           qc_notes: JSON.stringify({ validation_errors: validation.errors }),
           updated_at: new Date().toISOString(),
         }).eq('id', postId);
@@ -526,12 +490,13 @@ async function handleFull(body, businessSlug) {
       }
     }
 
-    // Save template result
+    // FIX: Save category from writer metadata, fall back to postType
     await supabase.from('blog_generated_posts').update({
       title: metadata.title, slug: metadata.slug,
       meta_description: metadata.meta_description,
       primary_keyword: metadata.primary_keyword,
       secondary_keywords: metadata.secondary_keywords || [],
+      category: metadata.category || postType,
       read_time: metadata.read_time, emoji: metadata.emoji,
       excerpt: metadata.excerpt, html_content: html, word_count: wordCount,
       updated_at: new Date().toISOString(),

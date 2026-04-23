@@ -100,7 +100,6 @@ export async function GET(request) {
  * PHASE 1: Pick topic → Research → Write → save as "draft"
  */
 async function runPhase1(biz, businessSlug, log, startTime) {
-  // ── Pick topic ──
   let targetKeyword, postType, queueId;
 
   const { data: queued } = await supabase
@@ -133,7 +132,6 @@ async function runPhase1(biz, businessSlug, log, startTime) {
     }
   }
 
-  // ── Research ──
   let research;
   try {
     const { data: brandKit } = await supabase.from('blog_brand_kits').select('*').eq('business_id', biz.id).single();
@@ -145,7 +143,6 @@ async function runPhase1(biz, businessSlug, log, startTime) {
     return NextResponse.json({ success: false, ...log });
   }
 
-  // ── Create post record ──
   const baseSlug = targetKeyword.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 80);
 
   const { data: existing } = await supabase
@@ -173,7 +170,6 @@ async function runPhase1(biz, businessSlug, log, startTime) {
 
   const postId = post.id;
 
-  // ── Write ──
   try {
     const { business: bizCtx, brandKit, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
     const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, '', referencePosts, bizCtx);
@@ -206,7 +202,6 @@ async function runPhase1(biz, businessSlug, log, startTime) {
 
 /**
  * PHASE 2: Template → QC → Quality Gate → Publish
- * Branches on publish_mode: static (CallBird) vs nextjs (VoiceAI Connect)
  */
 async function runPhase2(draft, biz, businessSlug, log, startTime) {
   const postId = draft.id;
@@ -214,11 +209,9 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
   const promptData = JSON.parse(draft.generation_prompt || '{}');
   const publishMode = biz.publish_mode || 'static';
 
-  // ── Template + Validate ──
   let metadata;
   try {
     if (publishMode === 'nextjs') {
-      // NEXTJS MODE: Extract metadata + raw article body (no HTML wrapping)
       const metaMatch = contentOutput.match(/<metadata>\s*([\s\S]*?)\s*<\/metadata>/);
       if (metaMatch) {
         try { metadata = JSON.parse(metaMatch[1].replace(/```json\n?|```/g, '').trim()); }
@@ -230,24 +223,21 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
       const contentMatch = contentOutput.match(/<content>\s*([\s\S]*?)\s*<\/content>/);
       let html = contentMatch ? contentMatch[1].trim() : contentOutput.replace(/<metadata>[\s\S]*?<\/metadata>/, '').trim();
 
-      // Strip accidental full-page wrapper
       html = html.replace(/<!DOCTYPE[^>]*>/gi, '').replace(/<\/?html[^>]*>/gi, '')
         .replace(/<head>[\s\S]*?<\/head>/gi, '').replace(/<\/?body[^>]*>/gi, '').trim();
-
-      // Fix internal link format: convert blog-{slug}.html → /blog/{slug} for nextjs
       html = html.replace(/href="blog-([^"]+)\.html"/gi, 'href="/blog/$1"');
-
-      // Strip self-review checklist if Claude included it
       html = html.replace(/\*\*STATISTICS CHECK[\s\S]*$/, '').trim();
       html = html.replace(/<self_review>[\s\S]*?<\/self_review>/gi, '').trim();
 
       const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
 
+      // FIX: Save category from writer metadata, fall back to draft's original category
       await supabase.from('blog_generated_posts').update({
         title: metadata.title, slug: metadata.slug,
         meta_description: metadata.meta_description,
         primary_keyword: metadata.primary_keyword,
         secondary_keywords: metadata.secondary_keywords || [],
+        category: metadata.category || draft.category,
         read_time: metadata.read_time, emoji: metadata.emoji,
         excerpt: metadata.excerpt, html_content: html,
         word_count: wordCount,
@@ -256,7 +246,6 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
       log.steps.push({ step: 'template', status: 'success', mode: 'nextjs', title: metadata.title, elapsed: `${Date.now() - startTime}ms` });
 
     } else {
-      // STATIC MODE: Full HTML template wrapping (CallBird)
       const templateResult = await wrapInTemplate(contentOutput, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix);
       metadata = templateResult.metadata;
 
@@ -270,6 +259,7 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
       if (!validation.valid) {
         await supabase.from('blog_generated_posts').update({
           title: metadata.title, slug: metadata.slug, html_content: html,
+          category: metadata.category || draft.category,
           status: 'revision_needed',
           qc_notes: JSON.stringify({ validation_errors: validation.errors }),
         }).eq('id', postId);
@@ -280,11 +270,13 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
         return NextResponse.json({ success: true, ...log });
       }
 
+      // FIX: Save category from writer metadata, fall back to draft's original category
       await supabase.from('blog_generated_posts').update({
         title: metadata.title, slug: metadata.slug,
         meta_description: metadata.meta_description,
         primary_keyword: metadata.primary_keyword,
         secondary_keywords: metadata.secondary_keywords || [],
+        category: metadata.category || draft.category,
         read_time: metadata.read_time, emoji: metadata.emoji,
         excerpt: metadata.excerpt, html_content: html,
         word_count: html.replace(/<[^>]*>/g, ' ').split(/\s+/).length,
@@ -293,7 +285,6 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
       log.steps.push({ step: 'template', status: 'success', mode: 'static', title: metadata.title, elapsed: `${Date.now() - startTime}ms` });
     }
 
-    // Track attributes (shared, non-blocking)
     try {
       const { data: postData } = await supabase.from('blog_generated_posts').select('html_content').eq('id', postId).single();
       const attrs = extractContentAttributes(postData.html_content, metadata, null);
@@ -372,7 +363,6 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
 
   log.steps.push({ step: 'quality_gate', decision: 'AUTO_PUBLISH', scores: qcResult.scores });
 
-  // ── Publish ──
   try {
     const pubResult = await publishPost(postId);
 

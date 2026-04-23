@@ -390,7 +390,7 @@ Return TWO blocks:
   "meta_description": "under 155 chars, specific benefit, includes keyword",
   "primary_keyword": "${targetKeyword}",
   "secondary_keywords": ["2-4 related long-tail keywords"],
-  "category": "${postType}",
+  "category": "the content pillar this post belongs to. If the <content_strategy> section defines specific pillars (e.g. foundation-repair, basement-waterproofing, crawl-space, drainage, concrete-repair, cost-reduction, revenue-growth, brand-marketing, industry-analysis), use the matching pillar slug. If no specific pillars are defined, use the post type format: ${postType}",
   "read_time": "X min read",
   "emoji": "relevant",
   "excerpt": "2-3 sentences that make someone click — specific, not generic",
