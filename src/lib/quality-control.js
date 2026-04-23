@@ -113,7 +113,7 @@ Review the HTML and return a JSON object with this exact structure:
   },
   "issues": ["list of specific issues found"],
   "suggestions": ["list of improvement suggestions"],
-  "hallucination_flags": ["list any organization names, study names, or statistics that appear fabricated"],
+  "hallucination_flags": ["list any organization names, study names, or statistics that appear fabricated — NOTE: statistics from the COMPANY CONTEXT section above (pricing, savings figures, network size, audience stats) are company claims the writer is INSTRUCTED to use — these are NOT hallucinations. Only flag stats attributed to external organizations/studies that cannot be verified."],
   "business_protection_flags": ["list any statements that recommend competitors over ${companyName}, create category fear, or position ${companyName} unfavorably"],
   "information_gain_assessment": "1-2 sentences on unique value vs typical competitor content",
   "aeo_assessment": "1-2 sentences on AI engine citation readiness",
@@ -121,9 +121,11 @@ Review the HTML and return a JSON object with this exact structure:
 }
 
 Verdict rules:
-- PASS: overall >= 8 AND all critical checks pass (no fabrications, no_hallucinated_sources, brand_positioned_favorably)
-- NEEDS_REVISION: overall 5-7 OR AEO/information gain below 7 OR hallucination flags OR category fear
-- REJECT: overall < 5 OR critical brand violations OR multiple hallucinated sources OR post drives readers AWAY from ${companyName}
+- PASS: overall >= 8 AND all critical checks pass (no fabricated external sources, no_hallucinated_sources, brand_positioned_favorably)
+- NEEDS_REVISION: overall 5-7 OR AEO/information gain below 7 OR fabricated external sources/studies OR category fear
+- REJECT: overall < 5 OR critical brand violations OR multiple fabricated external sources OR post drives readers AWAY from ${companyName}
+
+IMPORTANT: The hallucination_flags array should ONLY contain genuinely fabricated external citations (fake study names, invented organizations, made-up URLs). Company stats from the brand kit, illustrative math, and directional claims labeled as observations are NOT hallucinations and should NOT appear in this array. An empty hallucination_flags array is correct when no external sources are fabricated.
 
 NOTE ON COMPETITOR MENTIONS: Comparison posts SHOULD mention competitors honestly — this builds trust and is the content strategy's explicit instruction. Only flag as a business protection issue if ${companyName} is positioned NEGATIVELY (reader finishes thinking "I should NOT use ${companyName}") or if the post actively recommends a competitor as the better choice for the target audience. Honest acknowledgment of competitor strengths while making the case for ${companyName} is GOOD content, not a violation.
 
@@ -143,6 +145,8 @@ SCORING GUIDANCE:
 - FABRICATED EXPERIENCE: Flag "I've seen..." or "After helping hundreds..." — these are AI hallucinations.
 - FABRICATED DATA: Flag "after analyzing X,XXX businesses" without attribution.
 - FABRICATED FEATURES: Flag any feature claims not in the company description provided.
+- BRAND KIT STATS ARE NOT HALLUCINATIONS: Statistics from the company context above (pricing, savings figures, network size like "35+ carriers", audience stats like "80% of shippers research online") are company claims the writer was given. Do NOT flag these as hallucinations. Only flag stats attributed to EXTERNAL named organizations/studies/reports that cannot be verified.
+- ILLUSTRATIVE MATH IS NOT HALLUCINATION: When the writer shows a calculation using hypothetical inputs (e.g., "if your truck runs 100,000 miles at $0.15/mile..."), that is illustrative math, not a fabricated statistic. Only flag it if it's presented as sourced data from a named study.
 - MATH VERIFICATION: All calculations must be internally consistent.
 
 Return ONLY the JSON — no markdown fences, no explanation.`
