@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/autopilot?business=gtc-group",
       "schedule": "0 17 * * 1-5"
+    },
+    {
+      "path": "/api/cron/autopilot?business=rsa",
+      "schedule": "0 19 * * 1-5"
     }
   ]
 }

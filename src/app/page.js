@@ -1,838 +1,694 @@
-'use client'
+'use client';
+import { useState, useEffect, useCallback } from 'react';
 
-import { useState, useEffect, useCallback } from 'react'
-import Image from 'next/image'
-import Link from 'next/link'
+const BUSINESSES = [
+  { slug: 'callbird', name: 'CallBird AI', color: '#F6B828', bg: '#122092', domain: 'callbirdai.com', linkFormat: 'static' },
+  { slug: 'voiceai-connect', name: 'VoiceAI Connect', color: '#10b981', bg: '#064E3B', domain: 'myvoiceaiconnect.com', linkFormat: 'nextjs' },
+  { slug: 'gtc-group', name: 'The GTC Group', color: '#c9a227', bg: '#0f172a', domain: 'globaltransportconsultinggroup.com', linkFormat: 'nextjs' },
+  { slug: 'rsa', name: 'RSA', color: '#84d2f2', bg: '#273373', domain: 'waterhelpme.com', linkFormat: 'nextjs' },
+];
 
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
-const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+const STATUS_COLORS = {
+  pending: { bg: '#FEF3C7', text: '#92400E', label: 'Pending Review' },
+  approved: { bg: '#D1FAE5', text: '#065F46', label: 'Approved' },
+  published: { bg: '#DBEAFE', text: '#1E40AF', label: 'Published' },
+  rejected: { bg: '#FEE2E2', text: '#991B1B', label: 'Rejected' },
+  revision_needed: { bg: '#FDE68A', text: '#78350F', label: 'Needs Revision' },
+  failed: { bg: '#FEE2E2', text: '#991B1B', label: 'Failed' },
+};
 
-const SERVICES = [
-  {
-    title: 'Lawn Mowing & Maintenance',
-    href: '/services/lawn-mowing',
-    description: 'Professional lawn mowing for residential and commercial properties. Weekly, bi-weekly, or one-time cuts including edging, trimming, and blowing. Serving Oakland, Berkeley, Hayward, and surrounding cities.',
-    icon: <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>,
-  },
-  {
-    title: 'Landscaping & Sod Installation',
-    href: '/services/landscaping',
-    description: 'Complete landscape transformations — sod installation, flower beds, hardscaping, and drainage grading. We take Bay Area yards from neglected to neighborhood standout.',
-    icon: <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 22V8"/><path d="M5 12H2a10 10 0 0020 0h-3"/><path d="M5.24 17a5 5 0 01-.24-1.5C5 12.46 8.13 10 12 10s7 2.46 7 5.5a5 5 0 01-.24 1.5"/></svg>,
-  },
-  {
-    title: 'Junk Removal & Hauling',
-    href: '/services/junk-hauling',
-    description: "Same-day junk removal across the East Bay. Old furniture, appliances, construction debris, yard waste — we load it, haul it, and dispose of it. Often cheaper than renting a dumpster.",
-    icon: <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
-  },
-  {
-    title: 'Yard Cleanup & Debris Removal',
-    href: '/services/yard-cleanup',
-    description: "Overgrown lot, storm damage, or pre-sale property prep — we clear brush, weeds, branches, and debris so your outdoor space is usable again. Residential and commercial properties.",
-    icon: <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 6l3 1 2-3"/><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>,
-  },
-  {
-    title: 'Bush & Hedge Trimming',
-    href: '/services/bush-trimming',
-    description: 'Crisp, clean lines that instantly boost curb appeal. We shape, trim, and maintain your shrubs and hedges so they always look intentional — never neglected.',
-    icon: <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>,
-  },
-  {
-    title: 'Mulching & Bed Maintenance',
-    href: '/services/mulching',
-    description: "Fresh mulch, clean edges, weed-free beds. It's one of the fastest ways to make your entire property look polished and well-maintained.",
-    icon: <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M2 22l1-1h18l1 1"/><path d="M6 18V4a2 2 0 012-2h8a2 2 0 012 2v14"/><path d="M10 10h4"/><path d="M10 14h4"/></svg>,
-  },
-  {
-    title: '10-Yard Dump Trailer Rental',
-    href: '/services/trailer-rental',
-    description: "Need to haul it yourself? Rent our 10-yard dump trailer starting at $150/day. Drop-off, pickup, and disposal included in our full-service option at $400.",
-    icon: <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="1" y="6" width="15" height="10" rx="1"/><path d="M16 10h4l3 3v3h-7V10z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/><path d="M1 14h15"/></svg>,
-  },
-]
+const POST_TYPES = [
+  { value: 'industry', label: 'Industry Guide', desc: 'AI Receptionist for [Industry]' },
+  { value: 'comparison', label: 'Competitor Comparison', desc: 'vs [Competitor]' },
+  { value: 'how-to', label: 'How-To Guide', desc: 'How to [Solve Problem]' },
+  { value: 'statistics', label: 'Statistics & Data', desc: 'Data-driven post with numbers' },
+  { value: 'guide', label: 'Comprehensive Guide', desc: 'Definitive resource on a topic' },
+  { value: 'cost-analysis', label: 'Cost Analysis', desc: 'ROI and cost comparison' },
+  { value: 'about', label: 'Brand / AEO', desc: 'AEO-optimized brand awareness' },
+  { value: 'cost-reduction', label: 'Cost Reduction', desc: 'Cost savings analysis' },
+  { value: 'revenue-growth', label: 'Revenue Growth', desc: 'Revenue optimization' },
+  { value: 'brand-marketing', label: 'Brand & Marketing', desc: 'Online presence & branding' },
+  { value: 'industry-analysis', label: 'Industry Analysis', desc: 'Market trends & outlook' },
+];
 
-const SERVICE_AREAS = [
-  'Oakland', 'San Francisco', 'Berkeley', 'Richmond', 'Hayward', 'Fremont',
-  'San Leandro', 'Concord', 'Walnut Creek', 'Pleasanton', 'Dublin', 'Daly City',
-]
+const STEP_COSTS = {
+  research: { est: 0.05, label: 'Research + Web Search' },
+  write: { est: 0.35, label: 'Write Content + Thinking' },
+  template_static: { est: 0.25, label: 'HTML Template Wrap' },
+  template_nextjs: { est: 0.00, label: 'Metadata Extract (no API)' },
+  qc: { est: 0.15, label: 'Quality Control + Thinking' },
+};
 
-const TESTIMONIALS = [
-  {
-    text: "JB and his crew completely transformed our backyard. It went from an overgrown mess to something we actually want to spend time in. Reliable, fair prices, and great communication throughout.",
-    name: 'Maria R.',
-    location: 'Oakland, CA',
-    initials: 'MR',
-  },
-  {
-    text: "I had an entire garage worth of junk that needed to go before I could sell my house. JB's team cleared it out in one afternoon. Saved me a weekend of trips to the dump. Highly recommend.",
-    name: 'David L.',
-    location: 'San Francisco, CA',
-    initials: 'DL',
-  },
-  {
-    text: "We've been using JB for weekly mowing for about six months now. They're always on time, the lawn looks perfect every single week, and I don't have to worry about a thing. Best decision I made.",
-    name: 'Tanya N.',
-    location: 'Berkeley, CA',
-    initials: 'TN',
-  },
-]
+export default function Dashboard() {
+  const [activeBiz, setActiveBiz] = useState(BUSINESSES[0]);
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [publishing, setPublishing] = useState(null);
+  const [previewId, setPreviewId] = useState(null);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [genResult, setGenResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [recs, setRecs] = useState(null);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [runCost, setRunCost] = useState(0);
+  const [expandedNotes, setExpandedNotes] = useState(null);
 
-const BLOG_POSTS = [
-  {
-    href: '/blog/how-often-should-you-mow',
-    category: 'Lawn Care',
-    title: 'How Often Should You Mow Your Lawn in the Bay Area?',
-    excerpt: "Bay Area grass grows year-round thanks to the mild climate. Here's a seasonal mowing schedule that keeps your lawn healthy without overdoing it.",
-  },
-  {
-    href: '/blog/junk-removal-vs-dumpster',
-    category: 'Junk Removal',
-    title: 'Junk Removal vs. Dumpster Rental: Which Is Cheaper in 2026?',
-    excerpt: "When you factor in rental fees, permits, disposal costs, and your own labor, hiring a junk removal crew is usually the better deal. Here's the math.",
-  },
-  {
-    href: '/blog/spring-yard-checklist',
-    category: 'Yard Cleanup',
-    title: 'Spring Yard Cleanup Checklist for Bay Area Homeowners',
-    excerpt: 'The complete list of everything your yard needs after winter — from debris clearing and aeration to mulching and pre-emergent weed control.',
-  },
-]
+  const [keyword, setKeyword] = useState('');
+  const [postType, setPostType] = useState('guide');
+  const [notes, setNotes] = useState('');
 
-const GALLERY_PAIRS = [
-  { before: '/images/gallery/deck-cleanout-before.jpg', after: '/images/gallery/deck-cleanout-after.jpg', title: 'Deck Cleanout', tag: 'Junk Hauling' },
-  { before: '/images/gallery/yard-cleanup-before.jpg', after: '/images/gallery/yard-cleanup-after.jpg', title: 'Yard Cleanup & Sod', tag: 'Lawn Care' },
-  { before: '/images/gallery/side-yard-before.jpg', after: '/images/gallery/side-yard-after.jpg', title: 'Side Yard Clearing', tag: 'Yard Cleanup' },
-  { before: '/images/gallery/backyard-junk-before.jpg', after: '/images/gallery/backyard-junk-after.jpg', title: 'Backyard Cleanout', tag: 'Hauling & Cleanup' },
-  { before: '/images/gallery/hot-tub-removal-before.jpg', after: '/images/gallery/hot-tub-removal-after.jpg', title: 'Hot Tub Removal', tag: 'Heavy Hauling' },
-  { before: '/images/gallery/garage-cleanout-before.jpg', after: '/images/gallery/garage-cleanout-after.jpg', title: 'Garage Cleanout', tag: 'Junk Hauling' },
-  { before: '/images/gallery/bush-removal-before.jpg', after: '/images/gallery/bush-removal-after.jpg', title: 'Bush Removal', tag: 'Yard Cleanup' },
-  { before: '/images/gallery/overgrown-backyard-before.jpg', after: '/images/gallery/overgrown-backyard-after.jpg', title: 'Overgrown Yard Restoration', tag: 'Lawn Care' },
-  { before: '/images/gallery/front-yard-sod-before.jpg', after: '/images/gallery/front-yard-sod-after.jpg', title: 'Front Yard Sod Installation', tag: 'Landscaping' },
-]
-
-const PIN_ICON = (
-  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
-    <circle cx="12" cy="10" r="3"/>
-  </svg>
-)
-
-export default function HomePage() {
-  const [modalOpen, setModalOpen] = useState(false)
-  const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [navScrolled, setNavScrolled] = useState(false)
-  const [showBackToTop, setShowBackToTop] = useState(false)
-
-  // Calendar state
-  const now = new Date()
-  const [calMonth, setCalMonth] = useState(now.getMonth())
-  const [calYear, setCalYear] = useState(now.getFullYear())
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
-  const [selectedTime, setSelectedTime] = useState<string | null>(null)
-
-  // Form state
-  const [fname, setFname] = useState('')
-  const [lname, setLname] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [service, setService] = useState('')
-  const [address, setAddress] = useState('')
-  const [details, setDetails] = useState('')
-
-  // Scroll listener
-  useEffect(() => {
-    const onScroll = () => {
-      setNavScrolled(window.scrollY > 20)
-      setShowBackToTop(window.scrollY > 600)
+  const fetchPosts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/posts?business=${activeBiz.slug}`);
+      const data = await res.json();
+      setPosts(data.posts || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
     }
-    window.addEventListener('scroll', onScroll)
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
+  }, [activeBiz.slug]);
 
-  // Fade-in observer
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => entries.forEach((e) => { if (e.isIntersecting) e.target.classList.add('visible') }),
-      { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
-    )
-    document.querySelectorAll('.fade-in').forEach((el) => observer.observe(el))
-    return () => observer.disconnect()
-  }, [])
+    fetchPosts();
+    setRecs(null);
+    setGenResult(null);
+    setRunCost(0);
+    setExpandedNotes(null);
+  }, [fetchPosts]);
 
-  // Lock body scroll when modal open
-  useEffect(() => {
-    document.body.style.overflow = modalOpen ? 'hidden' : ''
-    return () => { document.body.style.overflow = '' }
-  }, [modalOpen])
-
-  const changeMonth = (dir: number) => {
-    let m = calMonth + dir
-    let y = calYear
-    if (m > 11) { m = 0; y++ }
-    if (m < 0) { m = 11; y-- }
-    setCalMonth(m)
-    setCalYear(y)
+  function switchBusiness(slug) {
+    const biz = BUSINESSES.find(b => b.slug === slug);
+    if (biz) setActiveBiz(biz);
   }
 
-  const renderCalendar = useCallback(() => {
-    const firstDay = new Date(calYear, calMonth, 1).getDay()
-    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    const cells: React.ReactNode[] = []
-
-    DAYS.forEach((d) => {
-      cells.push(<div key={`label-${d}`} className="calendar-day-label">{d}</div>)
-    })
-
-    for (let i = 0; i < firstDay; i++) {
-      cells.push(<div key={`empty-${i}`} className="calendar-day disabled" />)
+  async function fetchRecommendations() {
+    setRecsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/keywords?recommend=true&count=8&business=${activeBiz.slug}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setRecs(data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRecsLoading(false);
     }
-
-    for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(calYear, calMonth, d)
-      const isPast = date < today
-      const isSunday = date.getDay() === 0
-      const isToday = date.getTime() === today.getTime()
-      const isSelected = selectedDate ? date.getTime() === selectedDate.getTime() : false
-
-      let cls = 'calendar-day'
-      if (isPast || isSunday) cls += ' disabled'
-      if (isToday) cls += ' today'
-      if (isSelected) cls += ' selected'
-
-      cells.push(
-        <button
-          key={`day-${d}`}
-          className={cls}
-          onClick={() => !isPast && !isSunday && setSelectedDate(date)}
-          type="button"
-        >
-          {d}
-        </button>
-      )
-    }
-
-    return cells
-  }, [calYear, calMonth, selectedDate])
-
-  const handleSubmit = () => {
-    if (!fname || !phone || !service || !address || !selectedDate || !selectedTime) {
-      alert('Please fill out all required fields, select a date and time.')
-      return
-    }
-    alert(
-      `Thanks ${fname}! Your request has been submitted.\n\nService: ${service}\nDate: ${selectedDate.toLocaleDateString()}\nTime: ${selectedTime}\n\nWe'll call you at ${phone} to confirm.`
-    )
-    setModalOpen(false)
   }
 
-  const TIME_SLOTS = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM']
+  function useRecommendation(rec) {
+    setKeyword(rec.target_keyword);
+    setPostType(rec.post_type);
+    setNotes(rec.notes || '');
+    setGenResult(null);
+    setRunCost(0);
+    document.getElementById('generate-section')?.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  const [genStep, setGenStep] = useState('');
+
+  async function callStep(action, body) {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, businessSlug: activeBiz.slug, ...body }),
+    });
+    let data;
+    try {
+      const text = await res.text();
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Step "${action}" returned invalid response (HTTP ${res.status})`);
+    }
+    if (!res.ok) throw new Error(data.error || data.reason || `Step "${action}" failed (HTTP ${res.status})`);
+    return data;
+  }
+
+  async function handleGenerate(e) {
+    e.preventDefault();
+    if (!keyword.trim()) return;
+    setGenerating(true);
+    setError(null);
+    setGenResult(null);
+    setGenStep('');
+    setRunCost(0);
+    let totalCost = 0;
+
+    try {
+      setGenStep('🔍 Researching topic & finding real statistics...');
+      const step1 = await callStep('research', {
+        targetKeyword: keyword.trim(), postType, notes: notes.trim(),
+      });
+      totalCost += STEP_COSTS.research.est;
+      setRunCost(totalCost);
+      const postId = step1.postId;
+
+      setGenStep(`✍️ Writing content (${step1.research?.verifiedStats || 0} verified stats, ${step1.research?.gaps || 0} gaps found)...`);
+      await callStep('write', { postId });
+      totalCost += STEP_COSTS.write.est;
+      setRunCost(totalCost);
+
+      const templateKey = activeBiz.linkFormat === 'nextjs' ? 'template_nextjs' : 'template_static';
+      setGenStep(activeBiz.linkFormat === 'nextjs' ? '📦 Extracting metadata...' : '🏗️ Building HTML & running validation...');
+      const step3 = await callStep('template', { postId });
+      totalCost += STEP_COSTS[templateKey].est;
+      setRunCost(totalCost);
+
+      if (step3.validation && !step3.validation.valid) {
+        setGenResult({ ...step3, qc: null, validationFailed: true, cost: totalCost });
+        setKeyword('');
+        setNotes('');
+        fetchPosts();
+        return;
+      }
+
+      if (step3.dedup && !step3.dedup.unique) {
+        setGenResult({ ...step3, qc: null, dedupFailed: true, cost: totalCost });
+        setKeyword('');
+        setNotes('');
+        fetchPosts();
+        return;
+      }
+
+      setGenStep('✅ Running quality control (32 checks)...');
+      const step4 = await callStep('qc', { postId });
+      totalCost += STEP_COSTS.qc.est;
+      setRunCost(totalCost);
+
+      setGenResult({ ...step4, cost: totalCost });
+      setKeyword('');
+      setNotes('');
+      fetchPosts();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGenerating(false);
+      setGenStep('');
+    }
+  }
+
+  async function handleApprove(postId) {
+    if (!confirm('Publish this post? This will deploy to the live website.')) return;
+    setPublishing(postId);
+    setError(null);
+    try {
+      const res = await fetch('/api/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      fetchPosts();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setPublishing(null);
+    }
+  }
+
+  async function handleReject(postId) {
+    if (!confirm('Reject this post?')) return;
+    try {
+      await fetch('/api/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId }),
+      });
+      fetchPosts();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function handlePreview(postId) {
+    try {
+      const res = await fetch(`/api/posts/${postId}`);
+      const data = await res.json();
+      setPreviewHtml(data.html_content);
+      setPreviewId(postId);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  function getLiveUrl(post) {
+    if (activeBiz.linkFormat === 'nextjs') {
+      return `https://${activeBiz.domain}/blog/${post.slug}`;
+    }
+    return `https://${activeBiz.domain}/blog-${post.slug}.html`;
+  }
+
+  function parseQcNotes(post) {
+    const result = { heldReason: null, hallucinations: [], bizFlags: [], validationErrors: [], scores: null };
+    
+    // From qc_score (set by autopilot)
+    if (post.qc_score) {
+      result.hallucinations = post.qc_score.hallucination_flags || [];
+      result.bizFlags = post.qc_score.business_protection_flags || [];
+      result.scores = post.qc_score.scores || post.qc_score;
+    }
+
+    // From qc_notes (JSON string with held_reason, validation_errors, etc.)
+    if (post.qc_notes) {
+      try {
+        const notes = typeof post.qc_notes === 'string' ? JSON.parse(post.qc_notes) : post.qc_notes;
+        result.heldReason = notes.held_reason || null;
+        result.validationErrors = notes.validation_errors || [];
+        if (notes.scores) result.scores = notes.scores;
+      } catch { /* ignore parse errors */ }
+    }
+
+    return result;
+  }
+
+  const publishedCount = posts.filter(p => p.status === 'published').length;
+  const pendingCount = posts.filter(p => ['pending', 'revision_needed'].includes(p.status)).length;
 
   return (
-    <>
-      {/* FAQ Schema for AEO */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify({
-          "@context": "https://schema.org",
-          "@type": "FAQPage",
-          "mainEntity": [
-            { "@type": "Question", "name": "How much does junk removal cost in the Bay Area?", "acceptedAnswer": { "@type": "Answer", "text": "Most junk removal jobs in Oakland, Hayward, and the East Bay range from $150 to $500 depending on volume. JB Lawn Care & Hauling provides free, no-obligation estimates before any work begins." }},
-            { "@type": "Question", "name": "Do you offer same-day junk removal?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. JB Lawn Care & Hauling offers same-day junk hauling and removal for most Bay Area locations when scheduled before noon. Call 341-260-0331 or book online." }},
-            { "@type": "Question", "name": "How often should I have my lawn mowed in the Bay Area?", "acceptedAnswer": { "@type": "Answer", "text": "In the Bay Area's mild climate, most lawns need weekly mowing from March through October and bi-weekly service during the cooler months." }},
-            { "@type": "Question", "name": "What areas does JB Lawn Care serve?", "acceptedAnswer": { "@type": "Answer", "text": "JB Lawn Care & Hauling serves Oakland, Berkeley, Richmond, Hayward, Fremont, San Leandro, Concord, Walnut Creek, Pleasanton, Dublin, and the greater Bay Area." }},
-            { "@type": "Question", "name": "Is it cheaper to hire a junk removal company or rent a dumpster?", "acceptedAnswer": { "@type": "Answer", "text": "In most cases, hiring a junk removal crew is cheaper when you factor in dumpster rental fees, permits, disposal costs, and labor." }},
-            { "@type": "Question", "name": "Can I rent a dump trailer in the Bay Area?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. JB Lawn Care offers a 10-yard dump trailer for $150/day for DIY projects, or $400 for full-service including drop-off, pickup, and up to 1 ton of disposal. Available from Hayward to Vallejo." }},
-          ]
-        })}}
-      />
-      {/* Announcement Bar */}
-      <div className="announcement-bar">
-        <span>🌿 Now booking lawn care &amp; junk removal across Oakland, Hayward &amp; the East Bay!</span>{' '}
-        <a href="#" onClick={(e) => { e.preventDefault(); setModalOpen(true) }}>
-          Book your free estimate today →
-        </a>
-      </div>
-
-      {/* Navigation */}
-      <nav className={`nav${navScrolled ? ' scrolled' : ''}`}>
-        <div className="nav-inner">
-          <Link href="/" className="nav-logo">
-            <img src="/images/jb-logo.jpg" alt="JB Lawn Care & Hauling" />
-          </Link>
-          <ul className="nav-links">
-            <li><Link href="/">Home</Link></li>
-            <li className="dropdown">
-              <a href="#">Services ▾</a>
-              <div className="dropdown-menu">
-                <Link href="/services/lawn-mowing">Lawn Mowing &amp; Maintenance</Link>
-                <Link href="/services/landscaping">Landscaping &amp; Design</Link>
-                <Link href="/services/junk-hauling">Junk Removal &amp; Hauling</Link>
-                <Link href="/services/yard-cleanup">Yard Cleanup &amp; Debris</Link>
-                <Link href="/services/bush-trimming">Bush &amp; Hedge Trimming</Link>
-                <Link href="/services/mulching">Mulching &amp; Bed Care</Link>
-                <Link href="/services/trailer-rental">Dump Trailer Rental</Link>
-              </div>
-            </li>
-            <li className="dropdown">
-              <a href="#">Service Areas ▾</a>
-              <div className="dropdown-menu">
-                <Link href="/areas/oakland">Oakland</Link>
-                <Link href="/areas/san-francisco">San Francisco</Link>
-                <Link href="/areas/berkeley">Berkeley</Link>
-                <Link href="/areas/richmond">Richmond</Link>
-                <Link href="/areas/hayward">Hayward</Link>
-                <Link href="/areas/fremont">Fremont</Link>
-              </div>
-            </li>
-            <li><Link href="/gallery">Gallery</Link></li>
-            <li><Link href="/blog">Blog</Link></li>
-            <li><Link href="/about">About</Link></li>
-          </ul>
-          <a href="tel:3412600331" className="nav-phone">
-            <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.86 19.86 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.86 19.86 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
-            341-260-0331
-          </a>
-          <a href="#" className="nav-cta" onClick={(e) => { e.preventDefault(); setModalOpen(true) }}>Book Online</a>
-          <button className="nav-hamburger" onClick={() => setMobileNavOpen(true)} aria-label="Open menu">
-            <span /><span /><span />
-          </button>
-        </div>
-      </nav>
-
-      {/* Mobile Nav */}
-      <div className={`mobile-nav${mobileNavOpen ? ' open' : ''}`}>
-        <button className="mobile-nav-close" onClick={() => setMobileNavOpen(false)} aria-label="Close menu">&times;</button>
-        <Link href="/" onClick={() => setMobileNavOpen(false)}>Home</Link>
-        <Link href="/services/lawn-mowing" className="mobile-sub" onClick={() => setMobileNavOpen(false)}>Lawn Mowing &amp; Maintenance</Link>
-        <Link href="/services/landscaping" className="mobile-sub" onClick={() => setMobileNavOpen(false)}>Landscaping &amp; Design</Link>
-        <Link href="/services/junk-hauling" className="mobile-sub" onClick={() => setMobileNavOpen(false)}>Junk Removal &amp; Hauling</Link>
-        <Link href="/services/yard-cleanup" className="mobile-sub" onClick={() => setMobileNavOpen(false)}>Yard Cleanup &amp; Debris</Link>
-        <Link href="/services/bush-trimming" className="mobile-sub" onClick={() => setMobileNavOpen(false)}>Bush &amp; Hedge Trimming</Link>
-        <Link href="/services/mulching" className="mobile-sub" onClick={() => setMobileNavOpen(false)}>Mulching &amp; Bed Care</Link>
-        <Link href="/services/trailer-rental" className="mobile-sub" onClick={() => setMobileNavOpen(false)}>Dump Trailer Rental</Link>
-        <Link href="/gallery" onClick={() => setMobileNavOpen(false)}>Gallery</Link>
-        <Link href="/blog" onClick={() => setMobileNavOpen(false)}>Blog</Link>
-        <Link href="/about" onClick={() => setMobileNavOpen(false)}>About</Link>
-        <a href="tel:3412600331">📞 341-260-0331</a>
-        <a href="#" className="mobile-nav-cta" onClick={(e) => { e.preventDefault(); setModalOpen(true); setMobileNavOpen(false) }}>Book Online</a>
-      </div>
-
-      {/* Hero */}
-      <section className="hero">
-        <div className="hero-pattern" />
-        <div className="hero-inner" style={{ gridTemplateColumns: '1fr', textAlign: 'center', maxWidth: 800 }}>
-          <div className="hero-content" style={{ maxWidth: '100%' }}>
-            <h1>Bay Area Lawn Care,<br />Junk Removal &amp;<br /><span className="highlight">Hauling Done Right.</span></h1>
-            <p style={{ maxWidth: 600, margin: '0 auto 36px' }}>Tired of looking at that overgrown yard or garage full of junk? JB Lawn Care &amp; Hauling provides fast, affordable lawn mowing, junk hauling, yard cleanups, and landscaping services across Oakland, Hayward, Fremont, and the entire East Bay. Same-day estimates — just call or book online.</p>
-            <div className="hero-actions" style={{ justifyContent: 'center' }}>
-              <a href="#" className="btn-primary" onClick={(e) => { e.preventDefault(); setModalOpen(true) }}>
-                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                Get Your Free Estimate
-              </a>
-              <a href="tel:3412600331" className="btn-secondary">
-                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.86 19.86 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.86 19.86 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
-                Call Now
-              </a>
+    <div style={styles.container}>
+      {/* Header */}
+      <header style={styles.header}>
+        <div style={styles.headerInner}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <h1 style={styles.logo}>Blog Automation</h1>
+            <div style={styles.bizSelector}>
+              {BUSINESSES.map(biz => (
+                <button
+                  key={biz.slug}
+                  onClick={() => switchBusiness(biz.slug)}
+                  style={{
+                    ...styles.bizTab,
+                    background: activeBiz.slug === biz.slug ? biz.bg : 'transparent',
+                    color: activeBiz.slug === biz.slug ? biz.color : '#64748B',
+                    borderColor: activeBiz.slug === biz.slug ? biz.color : '#334155',
+                  }}
+                >
+                  {biz.name}
+                </button>
+              ))}
             </div>
-            <div className="hero-stats" style={{ justifyContent: 'center' }}>
-              <div>
-                <div className="hero-stat-value">500+</div>
-                <div className="hero-stat-label">Properties Serviced</div>
-              </div>
-              <div>
-                <div className="hero-stat-value">5.0★</div>
-                <div className="hero-stat-label">Google Rating</div>
-              </div>
-              <div>
-                <div className="hero-stat-value">Same-Day</div>
-                <div className="hero-stat-label">Estimates Available</div>
-              </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 12, color: '#64748B', textAlign: 'right' }}>
+              <div>{activeBiz.domain}</div>
+              <div>{activeBiz.linkFormat === 'nextjs' ? 'Next.js ISR' : 'Static HTML'}</div>
             </div>
+            <span style={{ ...styles.badge, background: activeBiz.bg, color: activeBiz.color }}>{activeBiz.name}</span>
           </div>
         </div>
-      </section>
+      </header>
 
-      {/* Trust Bar */}
-      <div className="trust-bar">
-        <div className="trust-bar-inner">
-          <div className="trust-item">
-            <div className="trust-icon">
-              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <main style={styles.main}>
+        {/* Quick Stats */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div style={styles.statBox}>
+            <div style={styles.statNum}>{posts.length}</div>
+            <div style={styles.statLabel}>Generated</div>
+          </div>
+          <div style={styles.statBox}>
+            <div style={{ ...styles.statNum, color: '#34D399' }}>{publishedCount}</div>
+            <div style={styles.statLabel}>Published</div>
+          </div>
+          <div style={styles.statBox}>
+            <div style={{ ...styles.statNum, color: '#FBBF24' }}>{pendingCount}</div>
+            <div style={styles.statLabel}>Pending</div>
+          </div>
+          {runCost > 0 && (
+            <div style={styles.statBox}>
+              <div style={{ ...styles.statNum, color: '#F87171' }}>${runCost.toFixed(2)}</div>
+              <div style={styles.statLabel}>Last Run Cost</div>
             </div>
-            Fully Insured
-          </div>
-          <div className="trust-item">
-            <div className="trust-icon">
-              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-            </div>
-            On-Time, Every Time
-          </div>
-          <div className="trust-item">
-            <div className="trust-icon">
-              <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            </div>
-            Free Estimates
-          </div>
-          <div className="trust-item" style={{ gap: 16 }}>
-            <img src="/images/google-logo.png" alt="Google" style={{ height: 28 }} />
-            <img src="/images/yelp-logo.png" alt="Yelp" style={{ height: 28 }} />
-            <img src="/images/thumbtack-logo.png" alt="Thumbtack" style={{ height: 28 }} />
-          </div>
-          <a href="#" className="trust-review-btn" onClick={(e) => e.preventDefault()}>
-            ★ Leave a Review
-          </a>
+          )}
         </div>
-      </div>
 
-      {/* Services */}
-      <section className="section services" id="services">
-        <div className="container">
-          <div className="section-header center fade-in">
-            <div className="section-label">Our Services</div>
-            <h2 className="section-title">Lawn Mowing, Junk Removal &amp;<br />Full Property Cleanups</h2>
-            <p className="section-subtitle">From weekly lawn maintenance to same-day junk hauling, we handle every outdoor job Bay Area homeowners and property managers need done. No subcontractors — our crew does it all.</p>
+        {/* AI Strategy Section */}
+        <section style={styles.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+            <h2 style={styles.cardTitle}>Content Strategy — {activeBiz.name}</h2>
+            <button onClick={fetchRecommendations} style={{ ...styles.generateBtn, background: activeBiz.bg }} disabled={recsLoading}>
+              {recsLoading ? '⏳ Analyzing Gaps...' : '🧠 Get AI Recommendations'}
+            </button>
           </div>
-          <div className="services-grid">
-            {SERVICES.map((s) => (
-              <Link key={s.href} href={s.href} className="service-card fade-in">
-                <div className="service-icon">{s.icon}</div>
-                <h3>{s.title}</h3>
-                <p>{s.description}</p>
-                <span className="service-link">Learn more →</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* Why Choose Us */}
-      <section className="section why-us">
-        <div className="container">
-          <div className="why-grid">
-            <div className="why-image fade-in">
-              <div style={{ width: '100%', height: '100%', borderRadius: 'var(--radius-xl)', overflow: 'hidden' }}>
-                <img src="/images/gallery/front-yard-sod-after.jpg" alt="Fresh lawn installation by JB Lawn Care" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              </div>
-            </div>
-            <div className="fade-in">
-              <div className="section-label">Why Choose JB</div>
-              <h2 className="section-title">The Bay Area&apos;s Most Reliable<br />Lawn &amp; Hauling Crew</h2>
-              <p className="section-subtitle" style={{ marginBottom: 36 }}>Most lawn care companies and junk haulers in Oakland and the East Bay are unreliable. We built our reputation by doing the opposite — showing up, communicating, and doing the job right the first time.</p>
-              <div className="why-points">
-                {[
-                  { title: 'We Show Up When We Say We Will', desc: "No guessing games. You'll get a confirmed time window and a heads-up when we're on the way. If something changes, we communicate — always.", icon: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> },
-                  { title: 'Transparent, Honest Pricing', desc: 'No hidden fees, no surprise charges. We quote it, you approve it, and that\'s what you pay. Every single time.', icon: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> },
-                  { title: 'Fully Licensed & Insured', desc: "You're protected. Our team is covered so you never have to worry about liability on your property.", icon: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M14 9V5a3 3 0 00-6 0v4"/><rect x="2" y="9" width="20" height="13" rx="2"/></svg> },
-                  { title: 'We Actually Care About the Result', desc: "This isn't a side hustle — it's our livelihood. If you're not happy with the work, we come back and make it right. Period.", icon: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> },
-                ].map((p) => (
-                  <div key={p.title} className="why-point">
-                    <div className="why-point-icon">{p.icon}</div>
-                    <div>
-                      <h4>{p.title}</h4>
-                      <p>{p.desc}</p>
+          {recs && (
+            <>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                <div style={styles.statBox}>
+                  <div style={styles.statNum}>{recs.existingCount}</div>
+                  <div style={styles.statLabel}>Total Posts</div>
+                </div>
+                {recs.totalOpportunities !== null && (
+                  <div style={styles.statBox}>
+                    <div style={styles.statNum}>{recs.totalOpportunities}</div>
+                    <div style={styles.statLabel}>Gaps Found</div>
+                  </div>
+                )}
+                {recs.coverage && Object.entries(recs.coverage).map(([cat, data]) => (
+                  <div key={cat} style={styles.statBox}>
+                    <div style={{ ...styles.statNum, fontSize: 18, color: data.coveragePercent > 60 ? '#34D399' : data.coveragePercent > 30 ? '#FBBF24' : '#F87171' }}>
+                      {data.coveragePercent}%
                     </div>
+                    <div style={styles.statLabel}>{cat.replace(/([A-Z])/g, ' $1').trim()}</div>
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      {/* How It Works */}
-      <section className="section process">
-        <div className="container">
-          <div className="section-header center fade-in">
-            <div className="section-label">How It Works</div>
-            <h2 className="section-title">From First Call to Finished Job<br />— It&apos;s That Simple</h2>
-            <p className="section-subtitle">No runaround. No phone tag. Just a straightforward process that gets your property taken care of fast.</p>
-          </div>
-          <div className="process-steps fade-in">
-            {[
-              { num: 1, title: 'Request a Quote', desc: "Book online or give us a call. Tell us what you need and we'll get back to you fast — usually within the hour." },
-              { num: 2, title: 'Get Your Estimate', desc: 'We\'ll assess the job, give you a clear price with no hidden fees, and answer any questions you have.' },
-              { num: 3, title: 'We Get to Work', desc: "Our crew shows up on time with the right equipment. We handle everything — you don't have to lift a finger." },
-              { num: 4, title: 'Enjoy the Results', desc: 'Walk out to a property that looks incredible. Love the work? Set up recurring service and never think about it again.' },
-            ].map((s) => (
-              <div key={s.num} className="process-step">
-                <div className="process-num">{s.num}</div>
-                <h4>{s.title}</h4>
-                <p>{s.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Gallery */}
-      <section className="section gallery" id="gallery">
-        <div className="container">
-          <div className="section-header center fade-in">
-            <div className="section-label">Our Work</div>
-            <h2 className="section-title">See the Difference for Yourself</h2>
-            <p className="section-subtitle">Before and after transformations from real jobs across the Bay Area. Every project, big or small, gets the same level of attention.</p>
-          </div>
-
-          <div className="gallery-grid">
-            {GALLERY_PAIRS.slice(0, 4).map((pair) => (
-              <div key={pair.title} className="gallery-pair fade-in">
-                <div className="gallery-pair-images">
-                  <div className="gallery-img-wrap">
-                    <span className="gallery-badge before">Before</span>
-                    <img src={pair.before} alt={`Before - ${pair.title}`} />
-                  </div>
-                  <div className="gallery-img-wrap">
-                    <span className="gallery-badge after">After</span>
-                    <img src={pair.after} alt={`After - ${pair.title}`} />
-                  </div>
-                </div>
-                <div className="gallery-pair-info">
-                  <h4>{pair.title}</h4>
-                  <span>{pair.tag}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ textAlign: 'center', marginTop: 40 }} className="fade-in">
-            <Link href="/gallery" className="btn-primary" style={{ background: 'var(--green-dark)' }}>View Full Gallery →</Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonials */}
-      <section className="section testimonials">
-        <div className="container">
-          <div className="section-header center fade-in">
-            <div className="section-label">Testimonials</div>
-            <h2 className="section-title" style={{ color: 'var(--white)' }}>What Our Customers Are Saying</h2>
-            <p className="section-subtitle">Don&apos;t just take our word for it — hear from homeowners and property managers across the Bay Area.</p>
-          </div>
-          <div className="testimonials-grid fade-in">
-            {TESTIMONIALS.map((t) => (
-              <div key={t.name} className="testimonial-card">
-                <div className="testimonial-stars">★★★★★</div>
-                <blockquote>&ldquo;{t.text}&rdquo;</blockquote>
-                <div className="testimonial-author">
-                  <div className="testimonial-avatar">{t.initials}</div>
-                  <div>
-                    <div className="testimonial-name">{t.name}</div>
-                    <div className="testimonial-loc">{t.location}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Service Areas */}
-      <section className="section areas" id="areas">
-        <div className="container">
-          <div className="section-header center fade-in">
-            <div className="section-label">Where We Work</div>
-            <h2 className="section-title">Lawn Care &amp; Junk Removal<br />Across the Bay Area</h2>
-            <p className="section-subtitle">We provide lawn mowing, junk hauling, landscaping, and yard cleanup services throughout Oakland, the East Bay, and surrounding communities. Don&apos;t see your city? Call us — we probably cover your area.</p>
-          </div>
-          <div className="areas-grid fade-in">
-            {SERVICE_AREAS.map((area) => (
-              <Link key={area} href={`/areas/${area.toLowerCase().replace(/\s+/g, '-')}`} className="area-tag">
-                {PIN_ICON}
-                {area}
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Dump Trailer Rental */}
-      <section className="section trailer-rental">
-        <div className="container">
-          <div className="trailer-grid">
-            <div className="trailer-image fade-in">
-              <img src="/images/gallery/dump-trailer.jpg" alt="JB Lawn Care 10-yard dump trailer for rent" />
-            </div>
-            <div className="fade-in">
-              <div className="section-label">Equipment Rental</div>
-              <h2 className="section-title" style={{ color: 'var(--white)' }}>10-Yard Dump Trailer for Rent</h2>
-              <p style={{ color: 'rgba(255,255,255,0.7)', lineHeight: 1.7, marginBottom: 8 }}>
-                Taking on a project yourself? Our heavy-duty 10-yard dump trailer handles junk, yard debris, construction waste, and more. We drop it off, you fill it up, we haul it away.
-              </p>
-              <p className="trailer-area">Serving <strong>Hayward to Vallejo</strong> — and everywhere in between.</p>
-              <div className="trailer-pricing">
-                <div className="trailer-price-card featured">
-                  <div className="trailer-price">$400</div>
-                  <div className="trailer-price-label">Full-Service Package</div>
-                  <div className="trailer-price-details">Drop-off + pickup included. Covers 1 ton of disposal fees. Keep it up to 7 days.</div>
-                </div>
-                <div className="trailer-price-card">
-                  <div className="trailer-price">$150<span style={{ fontSize: '1rem', fontFamily: 'var(--font-body)', opacity: 0.7 }}>/day</span></div>
-                  <div className="trailer-price-label">DIY Daily Rental</div>
-                  <div className="trailer-price-details">Haul it yourself for the day. Perfect for quick cleanouts and small projects.</div>
-                </div>
-              </div>
-              <div style={{ marginTop: 32 }}>
-                <button className="btn-primary" onClick={() => setModalOpen(true)} style={{ boxShadow: '0 6px 20px rgba(245,214,35,0.3)' }}>
-                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                  Reserve Your Trailer
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Banner */}
-      <section className="cta-banner">
-        <h2>Need Lawn Care or Junk Removal<br />in the Bay Area?</h2>
-        <p>Get a free, no-obligation estimate for any lawn, landscaping, or hauling job. Most quotes are returned within the hour — same-day service available.</p>
-        <button className="btn-white" onClick={() => setModalOpen(true)}>
-          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          Book Your Free Estimate
-        </button>
-      </section>
-
-      {/* FAQ Section — AEO Optimized */}
-      <section className="section" style={{ background: 'var(--white)' }}>
-        <div className="container">
-          <div className="section-header center fade-in">
-            <div className="section-label">FAQ</div>
-            <h2 className="section-title">Common Questions About Our Services</h2>
-          </div>
-          <div className="fade-in" style={{ maxWidth: 720, margin: '0 auto' }}>
-            {[
-              {
-                q: 'How much does junk removal cost in the Bay Area?',
-                a: 'Most junk removal jobs in Oakland, Hayward, and the East Bay range from $150 to $500 depending on volume. We provide free, no-obligation estimates before any work begins — you\'ll know the exact price upfront with no hidden fees.',
-              },
-              {
-                q: 'Do you offer same-day junk removal?',
-                a: 'Yes. We offer same-day junk hauling and removal for most Bay Area locations when scheduled before noon. Call 341-260-0331 or book online for availability.',
-              },
-              {
-                q: 'How often should I have my lawn mowed?',
-                a: 'In the Bay Area\'s mild climate, most lawns need weekly mowing from March through October and bi-weekly service during the cooler months. We offer flexible scheduling — weekly, bi-weekly, or one-time service.',
-              },
-              {
-                q: 'What areas do you serve?',
-                a: 'We provide lawn care, junk removal, landscaping, and hauling services across Oakland, Berkeley, Richmond, Hayward, Fremont, San Leandro, Concord, Walnut Creek, Pleasanton, Dublin, and the greater Bay Area.',
-              },
-              {
-                q: 'Is it cheaper to hire a junk removal company or rent a dumpster?',
-                a: 'In most cases, hiring a junk removal crew is cheaper when you factor in dumpster rental fees, permits, disposal costs, and your own labor. Our crew handles all the heavy lifting and disposal — you don\'t have to do anything.',
-              },
-              {
-                q: 'Can I rent a dump trailer instead?',
-                a: 'Yes. We offer a 10-yard dump trailer for rent at $150/day for DIY projects, or $400 for full-service (drop-off, pickup, and up to 1 ton of disposal included). Available from Hayward to Vallejo.',
-              },
-            ].map((faq, i) => (
-              <details key={i} style={{
-                borderBottom: '1px solid var(--gray-light)',
-                padding: '20px 0',
-              }}>
-                <summary style={{
-                  fontWeight: 700,
-                  fontSize: '1.02rem',
-                  cursor: 'pointer',
-                  color: 'var(--black)',
-                  listStyle: 'none',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}>
-                  {faq.q}
-                  <span style={{ color: 'var(--green-mid)', fontSize: '1.2rem', flexShrink: 0, marginLeft: 16 }}>+</span>
-                </summary>
-                <p style={{
-                  marginTop: 12,
-                  fontSize: '0.95rem',
-                  color: 'var(--gray-mid)',
-                  lineHeight: 1.7,
-                }}>{faq.a}</p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Blog Preview */}
-      <section className="section blog-preview">
-        <div className="container">
-          <div className="section-header center fade-in">
-            <div className="section-label">Resources</div>
-            <h2 className="section-title">Lawn Care Tips &amp; Hauling Guides</h2>
-            <p className="section-subtitle">Practical advice from our crew to help Bay Area homeowners maintain their properties and make smarter decisions about outdoor services.</p>
-          </div>
-          <div className="blog-grid fade-in">
-            {BLOG_POSTS.map((post) => (
-              <Link key={post.href} href={post.href} className="blog-card">
-                <div className="blog-thumb">📷 Blog Image</div>
-                <div className="blog-body">
-                  <div className="blog-category">{post.category}</div>
-                  <h3>{post.title}</h3>
-                  <p>{post.excerpt}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-          <div style={{ textAlign: 'center', marginTop: 40 }} className="fade-in">
-            <Link href="/blog" className="btn-primary" style={{ background: 'var(--green-dark)' }}>Read More on the Blog →</Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="footer">
-        <div className="footer-grid">
-          <div className="footer-brand">
-            <img src="/images/jb-logo-white.png" alt="JB Lawn Care & Hauling" style={{ height: 60 }} />
-            <p>Professional lawn care, junk removal, landscaping, and hauling services for residential and commercial properties across Oakland, Hayward, Fremont, and the greater Bay Area.</p>
-            <div className="footer-social">
-              <a href="#" aria-label="Facebook"><svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg></a>
-              <a href="#" aria-label="Instagram"><svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></a>
-              <a href="#" aria-label="Google"><svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg></a>
-            </div>
-          </div>
-          <div className="footer-col">
-            <h4>Services</h4>
-            <ul>
-              <li><Link href="/services/lawn-mowing">Lawn Mowing</Link></li>
-              <li><Link href="/services/landscaping">Landscaping</Link></li>
-              <li><Link href="/services/junk-hauling">Junk Removal</Link></li>
-              <li><Link href="/services/yard-cleanup">Yard Cleanup</Link></li>
-              <li><Link href="/services/bush-trimming">Bush Trimming</Link></li>
-              <li><Link href="/services/mulching">Mulching</Link></li>
-              <li><Link href="/services/trailer-rental">Trailer Rental</Link></li>
-            </ul>
-          </div>
-          <div className="footer-col">
-            <h4>Service Areas</h4>
-            <ul>
-              <li><Link href="/areas/oakland">Oakland</Link></li>
-              <li><Link href="/areas/san-francisco">San Francisco</Link></li>
-              <li><Link href="/areas/berkeley">Berkeley</Link></li>
-              <li><Link href="/areas/richmond">Richmond</Link></li>
-              <li><Link href="/areas/hayward">Hayward</Link></li>
-              <li><Link href="/areas/fremont">Fremont</Link></li>
-            </ul>
-          </div>
-          <div className="footer-col">
-            <h4>Company</h4>
-            <ul>
-              <li><Link href="/about">About Us</Link></li>
-              <li><Link href="/gallery">Gallery</Link></li>
-              <li><Link href="/blog">Blog</Link></li>
-              <li><Link href="/contact">Contact</Link></li>
-              <li><a href="tel:3412600331">341-260-0331</a></li>
-            </ul>
-          </div>
-        </div>
-        <div className="footer-bottom">
-          <span>&copy; 2026 JB Lawn Care &amp; Hauling. All rights reserved.</span>
-          <span>
-            <Link href="/privacy" style={{ color: 'inherit', textDecoration: 'none' }}>Privacy Policy</Link>
-            {' · '}
-            <Link href="/terms" style={{ color: 'inherit', textDecoration: 'none' }}>Terms of Service</Link>
-          </span>
-        </div>
-      </footer>
-
-      {/* Booking Modal */}
-      {modalOpen && (
-        <div className="modal-overlay active" onClick={(e) => { if (e.target === e.currentTarget) setModalOpen(false) }}>
-          <div className="modal">
-            <div className="modal-header">
-              <div>
-                <h2>Book Your Free Estimate</h2>
-                <p>Pick a date and time — we&apos;ll confirm within the hour.</p>
-              </div>
-              <button className="modal-close" onClick={() => setModalOpen(false)}>&times;</button>
-            </div>
-            <div className="modal-body">
-              <div className="form-row">
-                <div className="form-group">
-                  <label>First Name *</label>
-                  <input type="text" placeholder="John" value={fname} onChange={(e) => setFname(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Last Name *</label>
-                  <input type="text" placeholder="Smith" value={lname} onChange={(e) => setLname(e.target.value)} />
-                </div>
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Phone *</label>
-                  <input type="tel" placeholder="(555) 123-4567" value={phone} onChange={(e) => setPhone(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Email</label>
-                  <input type="email" placeholder="john@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-                </div>
-              </div>
-              <div className="form-group">
-                <label>Service Needed *</label>
-                <select value={service} onChange={(e) => setService(e.target.value)}>
-                  <option value="">Select a service...</option>
-                  <option>Lawn Mowing &amp; Maintenance</option>
-                  <option>Landscaping &amp; Design</option>
-                  <option>Junk Hauling &amp; Removal</option>
-                  <option>Yard Cleanup &amp; Debris</option>
-                  <option>Bush &amp; Hedge Trimming</option>
-                  <option>Mulching &amp; Bed Care</option>
-                  <option>Dump Trailer Rental</option>
-                  <option>Other / Multiple Services</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Property Address *</label>
-                <input type="text" placeholder="123 Main St, Oakland, CA" value={address} onChange={(e) => setAddress(e.target.value)} />
-              </div>
-
-              {/* Calendar */}
-              <div className="calendar-picker">
-                <label style={{ display: 'block', fontWeight: 700, fontSize: '0.88rem', marginBottom: 12, color: 'var(--gray-dark)' }}>Preferred Date *</label>
-                <div className="calendar-header">
-                  <button className="calendar-nav" onClick={() => changeMonth(-1)} type="button">‹</button>
-                  <h4>{MONTHS[calMonth]} {calYear}</h4>
-                  <button className="calendar-nav" onClick={() => changeMonth(1)} type="button">›</button>
-                </div>
-                <div className="calendar-grid-days">
-                  {renderCalendar()}
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Preferred Time *</label>
-                <div className="time-slots">
-                  {TIME_SLOTS.map((t) => (
-                    <button key={t} type="button" className={`time-slot${selectedTime === t ? ' selected' : ''}`} onClick={() => setSelectedTime(t)}>{t}</button>
+              {recs.recommendations && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {recs.recommendations.map((rec, i) => (
+                    <div key={i} style={{ ...styles.recRow, borderLeft: `3px solid ${rec.business_impact === 'high' ? '#34D399' : rec.business_impact === 'medium' ? '#FBBF24' : '#64748B'}` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
+                          <span style={styles.rankBadge}>#{rec.rank}</span>
+                          <strong style={{ fontSize: 14, color: '#F8FAFC' }}>{rec.title}</strong>
+                          <span style={{ fontSize: 11, background: '#334155', padding: '2px 6px', borderRadius: 4, color: '#94A3B8' }}>{rec.post_type}</span>
+                          <span style={{ fontSize: 11, background: rec.business_impact === 'high' ? '#064E3B' : '#1E293B', padding: '2px 6px', borderRadius: 4, color: rec.business_impact === 'high' ? '#34D399' : '#94A3B8' }}>{rec.business_impact}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#94A3B8', lineHeight: 1.4 }}>
+                          <span style={{ color: '#CBD5E1' }}>Keyword:</span> {rec.target_keyword} — {rec.reasoning}
+                        </div>
+                      </div>
+                      <button onClick={() => useRecommendation(rec)} style={{ ...styles.useRecBtn, background: activeBiz.bg, color: activeBiz.color }}>
+                        ⚡ Generate
+                      </button>
+                    </div>
                   ))}
                 </div>
-              </div>
+              )}
+            </>
+          )}
 
-              <div className="form-group">
-                <label>Additional Details</label>
-                <textarea placeholder="Tell us about the job — lot size, what needs to be hauled, any access issues, etc." value={details} onChange={(e) => setDetails(e.target.value)} />
-              </div>
+          {!recs && !recsLoading && (
+            <p style={{ color: '#64748B', fontSize: 14, margin: 0 }}>
+              Analyze content gaps and get prioritized topic recommendations for {activeBiz.name}.
+            </p>
+          )}
+        </section>
 
-              <button className="form-submit" onClick={handleSubmit} type="button">
-                Submit Request →
-              </button>
-              <p style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--gray-mid)', marginTop: 12 }}>We typically respond within 1 hour during business hours.</p>
+        {/* Generate Section */}
+        <section id="generate-section" style={styles.card}>
+          <h2 style={styles.cardTitle}>Generate New Post</h2>
+          <form onSubmit={handleGenerate} style={styles.form}>
+            <div style={styles.formRow}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Target Keyword</label>
+                <input
+                  style={styles.input}
+                  value={keyword}
+                  onChange={e => setKeyword(e.target.value)}
+                  placeholder="e.g., reduce AI receptionist client churn rate"
+                  disabled={generating}
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Post Type</label>
+                <select style={styles.select} value={postType} onChange={e => setPostType(e.target.value)} disabled={generating}>
+                  {POST_TYPES.map(t => (
+                    <option key={t.value} value={t.value}>{t.label} — {t.desc}</option>
+                  ))}
+                </select>
+              </div>
             </div>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Additional Notes (optional)</label>
+              <textarea
+                style={{ ...styles.input, minHeight: 60, resize: 'vertical' }}
+                value={notes}
+                onChange={e => setNotes(e.target.value)}
+                placeholder="Any specific instructions, angles, or data to include..."
+                disabled={generating}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <button type="submit" style={{ ...styles.generateBtn, background: activeBiz.bg }} disabled={generating || !keyword.trim()}>
+                {generating ? (genStep || '⏳ Starting...') : `⚡ Generate for ${activeBiz.name}`}
+              </button>
+              {generating && runCost > 0 && (
+                <span style={{ fontSize: 13, color: '#94A3B8' }}>Est. cost so far: ${runCost.toFixed(2)}</span>
+              )}
+            </div>
+          </form>
+
+          {!generating && runCost > 0 && (
+            <div style={{ marginTop: 12, padding: '8px 12px', background: '#0F172A', borderRadius: 6, fontSize: 12, color: '#64748B' }}>
+              💰 Estimated run cost: <strong style={{ color: '#F8FAFC' }}>${runCost.toFixed(2)}</strong>
+              {' '}({Object.entries(STEP_COSTS).filter(([k]) => {
+                if (k === 'template_static') return activeBiz.linkFormat !== 'nextjs';
+                if (k === 'template_nextjs') return activeBiz.linkFormat === 'nextjs';
+                return true;
+              }).map(([, v]) => `${v.label}: $${v.est.toFixed(2)}`).join(' + ')})
+            </div>
+          )}
+
+          {genResult && (
+            <div style={{ ...styles.resultBox, background: genResult.validationFailed || genResult.dedupFailed ? '#7F1D1D' : '#064E3B' }}>
+              {genResult.dedupFailed ? (
+                <>
+                  <strong style={{ color: '#FCA5A5' }}>⚠️ Duplicate Detected:</strong> {genResult.dedup?.recommendation}
+                  <div style={{ marginTop: 4, fontSize: 13, color: '#FECACA' }}>
+                    Slug &quot;{genResult.post?.slug}&quot; already exists. Try a different keyword angle.
+                  </div>
+                </>
+              ) : genResult.validationFailed ? (
+                <>
+                  <strong style={{ color: '#FCA5A5' }}>⛔ Validation Failed:</strong> {genResult.post?.title}
+                  <div style={{ marginTop: 8, fontSize: 13, color: '#FCA5A5' }}>
+                    {genResult.validation?.errors?.join(' | ')}
+                  </div>
+                </>
+              ) : genResult.qc ? (
+                <>
+                  <strong>✅ Generated:</strong> {genResult.post?.title} ({genResult.post?.word_count} words)
+                  <br />
+                  <strong>QC:</strong> {genResult.qc.verdict}
+                  {genResult.qc.scores && (
+                    <span> — SEO: {genResult.qc.scores.seo}/10, AEO: {genResult.qc.scores.aeo_readiness}/10, Info Gain: {genResult.qc.scores.information_gain}/10, Overall: {genResult.qc.scores.overall}/10</span>
+                  )}
+                  {genResult.cost && <span style={{ color: '#94A3B8' }}> — Est. cost: ${genResult.cost.toFixed(2)}</span>}
+                  {genResult.qc.hallucination_flags?.length > 0 && (
+                    <div style={{ marginTop: 8, fontSize: 13, color: '#FCA5A5' }}>
+                      ⚠️ Hallucination flags: {genResult.qc.hallucination_flags.join(' | ')}
+                    </div>
+                  )}
+                  {genResult.qc.business_protection_flags?.length > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 13, color: '#FCA5A5' }}>
+                      🛡️ Business flags: {genResult.qc.business_protection_flags.join(' | ')}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <strong>⏳ Post generated, pending QC</strong>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* Error */}
+        {error && (
+          <div style={styles.errorBox}>
+            <strong>Error:</strong> {error}
+            <button onClick={() => setError(null)} style={styles.dismissBtn}>✕</button>
+          </div>
+        )}
+
+        {/* Posts List */}
+        <section style={styles.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={styles.cardTitle}>Generated Posts — {activeBiz.name} ({posts.length})</h2>
+            <button onClick={fetchPosts} style={styles.refreshBtn}>↻ Refresh</button>
+          </div>
+
+          {loading ? (
+            <p style={{ color: '#94A3B8', textAlign: 'center', padding: 40 }}>Loading...</p>
+          ) : posts.length === 0 ? (
+            <p style={{ color: '#94A3B8', textAlign: 'center', padding: 40 }}>No generated posts yet for {activeBiz.name}.</p>
+          ) : (
+            <div style={styles.postsList}>
+              {posts.map(post => {
+                const statusInfo = STATUS_COLORS[post.status] || STATUS_COLORS.pending;
+                const qcInfo = parseQcNotes(post);
+                const hasNotes = qcInfo.heldReason || qcInfo.hallucinations.length > 0 || qcInfo.bizFlags.length > 0 || qcInfo.validationErrors.length > 0;
+                const isExpanded = expandedNotes === post.id;
+
+                return (
+                  <div key={post.id} style={styles.postRow}>
+                    <div style={styles.postInfo}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 20 }}>{post.emoji || '📝'}</span>
+                        <strong style={{ fontSize: 15 }}>{post.title}</strong>
+                      </div>
+                      <div style={styles.postMeta}>
+                        <span style={{ ...styles.statusBadge, backgroundColor: statusInfo.bg, color: statusInfo.text }}>
+                          {statusInfo.label}
+                        </span>
+                        {post.primary_keyword && <span>{post.primary_keyword}</span>}
+                        {post.word_count > 0 && <span>{post.word_count} words</span>}
+                        {post.read_time && <span>{post.read_time}</span>}
+                        {post.qc_score?.overall && <span>QC: {post.qc_score.overall}/10</span>}
+                        <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                      </div>
+
+                      {/* QC Scores row */}
+                      {qcInfo.scores && (
+                        <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                          {Object.entries(qcInfo.scores).filter(([k]) => k !== 'overall').map(([key, val]) => (
+                            <span key={key} style={{
+                              fontSize: 11, padding: '2px 6px', borderRadius: 4,
+                              background: val >= 7 ? '#064E3B' : val >= 5 ? '#78350F' : '#7F1D1D',
+                              color: val >= 7 ? '#34D399' : val >= 5 ? '#FBBF24' : '#FCA5A5',
+                            }}>
+                              {key.replace(/_/g, ' ')}: {val}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Hold reason badge */}
+                      {qcInfo.heldReason && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: '#FBBF24', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          ⚠️ <span>Held: {qcInfo.heldReason}</span>
+                        </div>
+                      )}
+
+                      {/* Expandable QC details */}
+                      {hasNotes && (
+                        <button
+                          onClick={() => setExpandedNotes(isExpanded ? null : post.id)}
+                          style={{ background: 'none', border: 'none', color: '#64748B', fontSize: 12, cursor: 'pointer', marginTop: 4, padding: 0, textDecoration: 'underline' }}
+                        >
+                          {isExpanded ? '▾ Hide QC details' : '▸ Show QC details'}
+                        </button>
+                      )}
+
+                      {isExpanded && (
+                        <div style={{ marginTop: 8, padding: 12, background: '#0F172A', borderRadius: 6, fontSize: 12, lineHeight: 1.6 }}>
+                          {qcInfo.hallucinations.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <strong style={{ color: '#FCA5A5' }}>⚠️ Hallucination Flags:</strong>
+                              {qcInfo.hallucinations.map((h, i) => (
+                                <div key={i} style={{ color: '#FDA4AF', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #7F1D1D' }}>{h}</div>
+                              ))}
+                            </div>
+                          )}
+                          {qcInfo.bizFlags.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <strong style={{ color: '#FBBF24' }}>🛡️ Business Protection Flags:</strong>
+                              {qcInfo.bizFlags.map((f, i) => (
+                                <div key={i} style={{ color: '#FDE68A', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #78350F' }}>{f}</div>
+                              ))}
+                            </div>
+                          )}
+                          {qcInfo.validationErrors.length > 0 && (
+                            <div>
+                              <strong style={{ color: '#FCA5A5' }}>⛔ Validation Errors:</strong>
+                              {qcInfo.validationErrors.map((e, i) => (
+                                <div key={i} style={{ color: '#FDA4AF', marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #7F1D1D' }}>{typeof e === 'string' ? e : e.message || JSON.stringify(e)}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div style={styles.postActions}>
+                      <button onClick={() => handlePreview(post.id)} style={styles.actionBtn}>👁 Preview</button>
+                      {(post.status === 'pending' || post.status === 'revision_needed') && (
+                        <>
+                          <button
+                            onClick={() => handleApprove(post.id)}
+                            style={{ ...styles.approveBtn, background: activeBiz.bg }}
+                            disabled={publishing === post.id}
+                          >
+                            {publishing === post.id ? '⏳...' : '✅ Publish'}
+                          </button>
+                          <button onClick={() => handleReject(post.id)} style={styles.rejectBtn}>❌</button>
+                        </>
+                      )}
+                      {post.status === 'published' && (
+                        <a href={getLiveUrl(post)} target="_blank" rel="noopener" style={styles.liveLink}>
+                          🔗 View Live
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </main>
+
+      {/* Preview Modal */}
+      {previewId && (
+        <div style={styles.modal} onClick={() => setPreviewId(null)}>
+          <div style={styles.modalContent} onClick={e => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <span style={{ fontWeight: 600 }}>Preview — {activeBiz.name}</span>
+              <button onClick={() => setPreviewId(null)} style={styles.modalClose}>✕</button>
+            </div>
+            {activeBiz.linkFormat === 'nextjs' ? (
+              <div style={{ flex: 1, overflow: 'auto', padding: 24, background: '#050505', color: '#fafaf9' }}
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
+            ) : (
+              <iframe
+                srcDoc={previewHtml}
+                style={styles.previewFrame}
+                title="Blog Post Preview"
+                sandbox="allow-same-origin"
+              />
+            )}
           </div>
         </div>
       )}
-
-      {/* Back to Top */}
-      {showBackToTop && (
-        <button className="back-to-top visible" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15" /></svg>
-        </button>
-      )}
-    </>
-  )
+    </div>
+  );
 }
+
+const styles = {
+  container: { fontFamily: "'Inter', -apple-system, sans-serif", background: '#0F172A', minHeight: '100vh', color: '#E2E8F0' },
+  header: { background: '#1E293B', borderBottom: '1px solid #334155', padding: '16px 24px' },
+  headerInner: { maxWidth: 1200, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 },
+  logo: { fontSize: 20, fontWeight: 700, color: '#F8FAFC', margin: 0 },
+  bizSelector: { display: 'flex', gap: 4, flexWrap: 'wrap' },
+  bizTab: { border: '1px solid', borderRadius: 6, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' },
+  badge: { padding: '4px 12px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
+  main: { maxWidth: 1200, margin: '0 auto', padding: '24px 24px 80px' },
+  card: { background: '#1E293B', borderRadius: 12, padding: 24, marginBottom: 20, border: '1px solid #334155' },
+  cardTitle: { fontSize: 18, fontWeight: 600, color: '#F8FAFC', marginTop: 0, marginBottom: 16 },
+  form: { display: 'flex', flexDirection: 'column', gap: 12 },
+  formRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
+  formGroup: { display: 'flex', flexDirection: 'column', gap: 4 },
+  label: { fontSize: 13, color: '#94A3B8', fontWeight: 500 },
+  input: { background: '#0F172A', border: '1px solid #334155', borderRadius: 8, padding: '10px 14px', color: '#F8FAFC', fontSize: 14, outline: 'none' },
+  select: { background: '#0F172A', border: '1px solid #334155', borderRadius: 8, padding: '10px 14px', color: '#F8FAFC', fontSize: 14, outline: 'none' },
+  generateBtn: { color: '#fff', border: 'none', borderRadius: 8, padding: '12px 24px', fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 4 },
+  resultBox: { borderRadius: 8, padding: 16, marginTop: 12, fontSize: 14, color: '#D1FAE5', lineHeight: 1.6 },
+  errorBox: { background: '#7F1D1D', borderRadius: 8, padding: 16, marginBottom: 20, fontSize: 14, color: '#FEE2E2', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  dismissBtn: { background: 'none', border: 'none', color: '#FEE2E2', cursor: 'pointer', fontSize: 16 },
+  refreshBtn: { background: '#334155', border: 'none', borderRadius: 6, padding: '6px 14px', color: '#94A3B8', fontSize: 13, cursor: 'pointer' },
+  postsList: { display: 'flex', flexDirection: 'column', gap: 8 },
+  postRow: { background: '#0F172A', borderRadius: 8, padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' },
+  postInfo: { flex: 1, minWidth: 300 },
+  postMeta: { display: 'flex', gap: 12, marginTop: 8, fontSize: 12, color: '#64748B', flexWrap: 'wrap', alignItems: 'center' },
+  statusBadge: { padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 },
+  postActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
+  actionBtn: { background: '#334155', border: 'none', borderRadius: 6, padding: '6px 12px', color: '#CBD5E1', fontSize: 13, cursor: 'pointer' },
+  approveBtn: { border: 'none', borderRadius: 6, padding: '6px 12px', color: '#D1FAE5', fontSize: 13, cursor: 'pointer', fontWeight: 600 },
+  rejectBtn: { background: '#7F1D1D', border: 'none', borderRadius: 6, padding: '6px 12px', color: '#FEE2E2', fontSize: 13, cursor: 'pointer' },
+  liveLink: { background: '#1E40AF', borderRadius: 6, padding: '6px 12px', color: '#DBEAFE', fontSize: 13, textDecoration: 'none', fontWeight: 500 },
+  modal: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  modalContent: { background: '#1E293B', borderRadius: 12, width: '95vw', maxWidth: 1100, height: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid #334155' },
+  modalClose: { background: 'none', border: 'none', color: '#94A3B8', fontSize: 20, cursor: 'pointer' },
+  previewFrame: { flex: 1, border: 'none', background: '#fff', width: '100%' },
+  statBox: { background: '#0F172A', borderRadius: 8, padding: '12px 16px', minWidth: 80, textAlign: 'center' },
+  statNum: { fontSize: 22, fontWeight: 700, color: '#F8FAFC' },
+  statLabel: { fontSize: 11, color: '#64748B', marginTop: 2, textTransform: 'capitalize' },
+  recRow: { background: '#0F172A', borderRadius: 8, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  rankBadge: { background: '#334155', color: '#CBD5E1', padding: '2px 6px', borderRadius: 4, fontSize: 11, fontWeight: 700 },
+  useRecBtn: { border: 'none', borderRadius: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' },
+};
