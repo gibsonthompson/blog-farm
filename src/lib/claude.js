@@ -147,14 +147,23 @@ export async function writeContent(brandKit, existingPosts, research, postType, 
   const phone = biz?.phone;
   const trialUrl = brandKit?.cta_templates?.[0]?.split('→')?.[1]?.trim() || `/signup`;
 
-  // Extract author name from content_strategy (look for "Author is ALWAYS X" pattern)
+  // Extract author from content_strategy
+  // Handles: "Author is ALWAYS Jacob Brewer, Founder & CEO" (person)
+  //          "Author is the ORGANIZATION Reliable Solutions Atlanta" (org)
   // Falls back to "Gibson Thompson" for CallBird/VoiceAI Connect
   let authorName = 'Gibson Thompson';
   let authorTitle = 'Founder';
-  const authorMatch = (brandKit?.content_strategy || '').match(/Author is ALWAYS\s+([^,.\n]+)/i);
-  if (authorMatch) {
-    authorName = authorMatch[1].trim();
-    const titleMatch = (brandKit?.content_strategy || '').match(/Author is ALWAYS\s+[^,]+,\s*([^.\n]+)/i);
+  let authorIsOrg = false;
+  const strategy = brandKit?.content_strategy || '';
+  const orgMatch = strategy.match(/Author is the ORGANIZATION\s+([^,.\n]+)/i);
+  const personMatch = strategy.match(/Author is ALWAYS\s+([^,.\n]+)/i);
+  if (orgMatch) {
+    authorName = orgMatch[1].trim();
+    authorTitle = '';
+    authorIsOrg = true;
+  } else if (personMatch) {
+    authorName = personMatch[1].trim();
+    const titleMatch = strategy.match(/Author is ALWAYS\s+[^,]+,\s*([^.\n]+)/i);
     if (titleMatch) authorTitle = titleMatch[1].trim();
   }
 
@@ -181,7 +190,11 @@ export async function writeContent(brandKit, existingPosts, research, postType, 
   // Build post type instructions dynamically
   const postTypeInstructions = getPostTypeInstructions(postType, companyName);
 
-  const prompt = `<role>You are ${authorName}, ${authorTitle} of ${companyName}. You write like a business owner who's obsessed with the specific problem this post addresses — not like a content marketer filling a keyword slot. Before writing a single word, ask yourself: "If someone has already read the top 3 Google results for this keyword, what does THIS post tell them that those didn't?" If you can't answer that, you need a different angle.</role>
+  const roleIntro = authorIsOrg
+    ? `You are writing on behalf of ${authorName}. You write like a team of experts who are obsessed with the specific problem this post addresses — not like a content marketer filling a keyword slot.`
+    : `You are ${authorName}, ${authorTitle} of ${companyName}. You write like a business owner who's obsessed with the specific problem this post addresses — not like a content marketer filling a keyword slot.`;
+
+  const prompt = `<role>${roleIntro} Before writing a single word, ask yourself: "If someone has already read the top 3 Google results for this keyword, what does THIS post tell them that those didn't?" If you can't answer that, you need a different angle.</role>
 
 <audience>${brandKit.target_audience}</audience>
 
