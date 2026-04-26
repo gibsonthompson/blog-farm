@@ -22,6 +22,19 @@ export async function runQualityControl(postId, business, brandKit) {
   const publishMode = business.publish_mode || 'static';
   const isNextjs = publishMode === 'nextjs';
 
+  // Extract expected author from brand kit (same logic as claude.js)
+  let expectedAuthor = 'Gibson Thompson';
+  let authorIsOrg = false;
+  const strategy = brandKit?.content_strategy || '';
+  const orgMatch = strategy.match(/Author is the ORGANIZATION\s+([^,.\n]+)/i);
+  const personMatch = strategy.match(/Author is ALWAYS\s+([^,.\n]+)/i);
+  if (orgMatch) {
+    expectedAuthor = orgMatch[1].trim();
+    authorIsOrg = true;
+  } else if (personMatch) {
+    expectedAuthor = personMatch[1].trim();
+  }
+
   // For nextjs mode, content is article body only (no DOCTYPE, head, GTM, phone in footer)
   const htmlStructureNote = isNextjs
     ? `\nIMPORTANT: This is article-body-only HTML (rendered inside a Next.js layout). There is NO DOCTYPE, head, title tag, GTM script, footer, or H1. Skip checks for: has_gtm, has_title_tag, has_canonical_url, has_og_tags, has_h1, single_h1, has_footer_compliance, mobile_responsive_css, correct_phone_number. Set those to true (not applicable). Focus on CONTENT QUALITY checks.`
@@ -104,7 +117,7 @@ Review the HTML and return a JSON object with this exact structure:
     "entity_clarity_in_intro": <true/false — first 200 words define what/who/cost/where?>,
     "no_hallucinated_sources": <true/false — CRITICAL: are ALL named organizations real?>,
     "no_fake_statistics": <true/false>,
-    "author_is_gibson_thompson": <true/false — author byline says "Gibson Thompson" not "${companyName} Team" or generic>,
+    "author_matches_expected": <true/false — author byline says "${expectedAuthor}"${authorIsOrg ? ' (organization author)' : ''}, not "${companyName} Team" or generic>,
     "correct_year_references": <true/false — all year references use ${new Date().getFullYear()}, not ${new Date().getFullYear() - 1}>,
     "no_competitor_recommendations": <true/false — Does the post actively PUSH readers toward competitors? Mentioning competitors honestly is FINE and expected in comparison posts. What's NOT okay: "Don't use ${companyName} for [use case], use [competitor] instead." The test: does a reader finish thinking ${companyName} is the best choice for the target audience? If yes, competitor mentions are fine — even generous ones.>,
     "no_category_fear": <true/false — does the post create fear about the product category?>,
@@ -121,24 +134,52 @@ Review the HTML and return a JSON object with this exact structure:
 }
 
 Verdict rules:
-- PASS: overall >= 8 AND all critical checks pass (no fabricated external sources, no_hallucinated_sources, brand_positioned_favorably)
-- NEEDS_REVISION: overall 5-7 OR AEO/information gain below 7 OR fabricated external sources/studies OR category fear
-- REJECT: overall < 5 OR critical brand violations OR multiple fabricated external sources OR post drives readers AWAY from ${companyName}
+- PASS: overall >= 7 AND seo >= 6 AND aeo_readiness >= 6 AND brand_voice >= 6 AND no hallucination flags AND brand_positioned_favorably
+- NEEDS_REVISION: overall 5-6 OR any of (seo, aeo_readiness, brand_voice) below 6 OR hallucination flags found OR category fear
+- REJECT: overall < 5 OR factual_accuracy < 5 OR brand_voice < 4 OR multiple fabricated external sources OR post drives readers AWAY from ${companyName}
 
 IMPORTANT: The hallucination_flags array should ONLY contain genuinely fabricated external citations (fake study names, invented organizations, made-up URLs). Company stats from the brand kit, illustrative math, and directional claims labeled as observations are NOT hallucinations and should NOT appear in this array. An empty hallucination_flags array is correct when no external sources are fabricated.
 
 NOTE ON COMPETITOR MENTIONS: Comparison posts SHOULD mention competitors honestly — this builds trust and is the content strategy's explicit instruction. Only flag as a business protection issue if ${companyName} is positioned NEGATIVELY (reader finishes thinking "I should NOT use ${companyName}") or if the post actively recommends a competitor as the better choice for the target audience. Honest acknowledgment of competitor strengths while making the case for ${companyName} is GOOD content, not a violation.
 
-SCORING GUIDANCE:
-- seo: Score 8+ requires: keyword in title + first 100 words, 3+ internal links, 2+ external links to authoritative sources, clean URL slug, meta description under 160 chars. Score 6-7 if missing external links or meta issues. Below 6 if missing internal links or keyword not in title.
-- information_gain: Score 8+ ONLY if the post has a unique thesis not in top Google results. "Another comparison" = 4. "A method nobody explains" = 8.
+SCORING GUIDANCE — Use these rubrics. Each category has specific criteria per score level.
+
+- seo: Score based on these SPECIFIC criteria:
+  9-10: Keyword in title + first 100 words + 2+ H2s. 3+ internal links. 2+ external links to authoritative sources. Clean slug. Meta description under 160 chars with keyword. Image alt tags include keyword variant.
+  7-8: Keyword in title + first 100 words. 2+ internal links. 1+ external link. Clean slug. Meta description present.
+  5-6: Keyword in title OR first 100 words (not both). Fewer than 2 internal links. No external links. Meta description missing or over 160 chars.
+  Below 5: Keyword missing from title AND first 100 words. No internal links. No slug optimization.
+
 - aeo_readiness: Score based on these SPECIFIC criteria:
   9-10: Every H2 section opens with a 40-60 word standalone answer block. FAQ answers work out of context. Product name + price in first 200 words. 2+ stats per 300 words. Comparison table present (if applicable). 2+ external links.
   7-8: Most sections have answer blocks. FAQ answers mostly standalone. Some stats present but density could be higher. Product mentioned in intro.
   5-6: Answer blocks inconsistent — some sections open with context instead of answers. FAQ answers require surrounding context. Low statistics density. No product/price in first 200 words.
   Below 5: No answer block structure. FAQ answers aren't standalone. No data points. AI engines would skip this content.
+
+- brand_voice: Score based on these SPECIFIC criteria:
+  9-10: Product mentioned by name 3+ times naturally. Current pricing included. CTA with trial/demo info present.${business.phone ? ' Phone number included.' : ''} Reads like a knowledgeable founder/expert writing to a peer — confident, specific, opinionated. Uses "you/your" throughout. Includes real-world business scenarios. Tone matches the brand voice described in the company context.
+  7-8: Product mentioned 2+ times. Some pricing or CTA present. Tone is mostly on-brand. Some business scenarios.
+  5-6: Product mentioned 0-1 times. No pricing. Generic CTA or none. Reads like AI-generated content — could be about any product. No specific business scenarios.
+  Below 5: Product not mentioned. Wrong product name. Tone completely off-brand or reads like a competitor wrote it.
+
 - content_quality: Score 8+ ONLY if useful to someone who DOESN'T buy ${companyName}. Dressed-up sales pitch = 5 or below.
+
+- technical: Score based on HTML quality:
+  9-10: Clean semantic HTML (h2, h3, p, ul, table). Proper heading hierarchy (no skipped levels). All links have correct href format. No broken HTML tags.
+  7-8: Mostly clean HTML. Minor issues (skipped heading level, inconsistent formatting).
+  5-6: HTML issues (unclosed tags, incorrect nesting, divs where semantic elements should be).
+  Below 5: Broken HTML that would render incorrectly.
+
 - factual_accuracy: Score 5 or below if ANY named source cannot be verified. Flag ALL suspicious sources.
+
+- information_gain: Score 8+ ONLY if the post has a unique thesis not in top Google results. "Another comparison" = 4. "A method nobody explains" = 8.
+
+- overall: This is a WEIGHTED score, not a simple average. Calculate as:
+  SEO (25%) + AEO_READINESS (25%) + BRAND_VOICE (20%) + INFORMATION_GAIN (15%) + CONTENT_QUALITY (10%) + TECHNICAL (5%).
+  If factual_accuracy < 7, cap overall at 6 regardless of other scores.
+  The overall score answers: "Would this post rank well, get cited by AI engines, AND represent the brand correctly?"
+
+ADDITIONAL SCORING RULES:
 - STRUCTURAL ORIGINALITY: Flag if same calculation template repeated 3+ times. Flag if sections are interchangeable with any competitor blog.
 - YEAR CHECK: ${new Date().getFullYear()} only. ${new Date().getFullYear() - 1} used as current = NEEDS_REVISION.
 - BUSINESS PROTECTION: Competitor recommendations or category fear = INSTANT REJECT.
@@ -181,13 +222,29 @@ Return ONLY the JSON — no markdown fences, no explanation.`
 
   const duration = Date.now() - startTime;
 
+  // Build descriptive held_reason showing which scores failed
+  const scores = qcResult.scores || {};
+  const lowScores = Object.entries(scores)
+    .filter(([k, v]) => v < 7 && ['seo', 'aeo_readiness', 'brand_voice', 'overall', 'information_gain'].includes(k))
+    .map(([k, v]) => `${k}:${v}`)
+    .join(', ');
+  const heldReason = qcResult.verdict !== 'PASS' && lowScores
+    ? `Low scores: ${lowScores}`
+    : qcResult.verdict !== 'PASS'
+      ? `Verdict: ${qcResult.verdict}`
+      : null;
+
   // Update the post with QC results
   await supabase.from('blog_generated_posts').update({
     qc_score: qcResult.scores,
     qc_notes: JSON.stringify({
+      scores: qcResult.scores,
       checks: qcResult.checks,
       issues: qcResult.issues,
       suggestions: qcResult.suggestions,
+      held_reason: heldReason,
+      hallucination_flags: qcResult.hallucination_flags || [],
+      business_protection_flags: qcResult.business_protection_flags || [],
     }),
     qc_passed: qcResult.verdict === 'PASS',
     status: qcResult.verdict === 'REJECT' ? 'rejected' : 

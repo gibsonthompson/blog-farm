@@ -426,7 +426,13 @@ Use class="faq-section" with class="faq-item" for FAQs at the end.
 Internal links as <a href="${linkPrefix}slug-here${linkSuffix}">descriptive anchor text</a>.
 Service page links as <a href="${serviceBaseUrl}/path">anchor text</a>.
 
-REMINDER: The AEO REQUIREMENTS in hard_rules above are MANDATORY. Every H2 opens with a 40-60 word answer block. 2+ data points per 300 words. First 200 words establish what/who/cost/action.
+STRUCTURAL REQUIREMENTS — YOUR POST WILL BE REJECTED IF THESE ARE MISSING:
+1. Every H2 opens with a 40-60 word standalone answer block (AEO).
+2. 2+ data points per 300 words — use verified stats AND your own pricing math.
+3. First 200 words: ${companyName} by name, a price point, and the target audience.
+4. 2-3 EXTERNAL LINKS from the EXTERNAL URLS in research_findings. Use <a href="URL" target="_blank">descriptive text</a>. If research provided URLs, you MUST use at least 2. This is not optional.
+5. 3+ INTERNAL LINKS from the existing posts list.
+6. FAQ section with 4-6 questions using class="faq-section" and class="faq-item".
 </content>
 
 <self_review>
@@ -461,7 +467,7 @@ AEO CHECK — MANDATORY:
 10. Read the FIRST SENTENCE under every H2. Does each one work as a standalone answer if quoted by ChatGPT? If any H2 opens with context, background, or a transition instead of a direct answer — REWRITE IT NOW.
 11. Count your data points (statistics, pricing numbers, calculations). Do you have 2+ per 300 words? If not, add more from verified_statistics or calculate from real pricing.
 12. Do the first 200 words mention ${companyName} by name, at least one price point, and the target audience? If not, work them in naturally.
-13. Do you have external links? If yes — does EVERY external URL come from the research findings? If you typed any URL from memory — DELETE IT NOW. If research provided no external URLs, skip external links entirely.
+13. EXTERNAL LINKS CHECK — Count your external links. You need 2-3 from the EXTERNAL URLS list in research_findings. If you have ZERO external links and the research provided URLs — GO BACK AND ADD THEM NOW. Every external URL must come from research — if you typed any URL from memory, DELETE IT. Only skip external links if the research EXTERNAL URLS section was truly empty.
 14. Review the SELF-REVIEW ADDITIONS in the content_strategy section above and verify compliance.
 </self_review>
 ${notes ? `\n<publisher_notes>${notes}</publisher_notes>` : ''}`;
