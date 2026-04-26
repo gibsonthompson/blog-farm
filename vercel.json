@@ -6,19 +6,19 @@
     },
     {
       "path": "/api/cron/autopilot?business=callbird",
-      "schedule": "0 13 * * 1-5"
+      "schedule": "0 13 * * *"
     },
     {
       "path": "/api/cron/autopilot?business=voiceai-connect",
-      "schedule": "0 15 * * 1-5"
+      "schedule": "0 15 * * *"
     },
     {
       "path": "/api/cron/autopilot?business=gtc-group",
-      "schedule": "0 17 * * 1-5"
+      "schedule": "0 17 * * *"
     },
     {
       "path": "/api/cron/autopilot?business=rsa",
-      "schedule": "0 19 * * 1-5"
+      "schedule": "0 19 * * *"
     }
   ]
 }

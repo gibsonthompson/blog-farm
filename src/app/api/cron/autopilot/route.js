@@ -14,31 +14,51 @@ const MIN_QC_OVERALL = 7;
 const MIN_QC_INFO_GAIN = 6;
 
 /**
+ * Persistent cron log helper — writes to blog_cron_logs in Supabase
+ * so we can diagnose cron issues without Vercel's 30-min log window.
+ */
+async function logCronInvocation(entry) {
+  try { await supabase.from('blog_cron_logs').insert(entry); } catch { /* table may not exist yet */ }
+}
+
+/**
  * GET /api/cron/autopilot?business=callbird
- * 
- * Supports multiple businesses via query parameter.
- * Defaults to 'callbird' for backwards compatibility.
- * 
- * Priority order each run:
- *   1. Retry approved posts (cadence-blocked last time)
- *   2. Phase 2: template + QC + publish a draft (pipeline_step = 1)
- *   3. Phase 1: pick topic + research + write a new draft
  */
 export async function GET(request) {
   const authHeader = request.headers.get('authorization');
+  const userAgent = request.headers.get('user-agent') || 'unknown';
+  const { searchParams } = new URL(request.url);
+  const businessSlug = searchParams.get('business') || 'callbird';
+
+  const cronLog = {
+    business_slug: businessSlug,
+    invoked_at: new Date().toISOString(),
+    user_agent: userAgent.substring(0, 200),
+    auth_present: !!authHeader,
+    auth_match: authHeader === `Bearer ${process.env.CRON_SECRET}`,
+    is_vercel_cron: userAgent.includes('vercel-cron'),
+    result: null,
+    error: null,
+  };
+
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    cronLog.result = 'auth_failed';
+    cronLog.error = `Header present: ${!!authHeader}. CRON_SECRET env set: ${!!process.env.CRON_SECRET}`;
+    await logCronInvocation(cronLog);
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const businessSlug = searchParams.get('business') || 'callbird';
   const startTime = Date.now();
   const log = { timestamp: new Date().toISOString(), business: businessSlug, steps: [], result: null };
 
   try {
     const { data: biz } = await supabase
       .from('blog_businesses').select('*').eq('slug', businessSlug).single();
-    if (!biz) return NextResponse.json({ error: `Business "${businessSlug}" not found` }, { status: 404 });
+    if (!biz) {
+      cronLog.result = 'business_not_found';
+      await logCronInvocation(cronLog);
+      return NextResponse.json({ error: `Business "${businessSlug}" not found` }, { status: 404 });
+    }
 
     // PRIORITY 1: Retry approved posts (were cadence-blocked)
     const { data: approved } = await supabase
@@ -65,6 +85,8 @@ export async function GET(request) {
         log.result = 'retry_error';
         log.steps.push({ step: 'publish', error: err.message });
       }
+      cronLog.result = log.result;
+      await logCronInvocation(cronLog);
       return NextResponse.json({ success: true, ...log });
     }
 
@@ -81,16 +103,25 @@ export async function GET(request) {
 
     if (draft) {
       log.steps.push({ step: 'phase', value: 2, postId: draft.id });
-      return await runPhase2(draft, biz, businessSlug, log, startTime);
+      const response = await runPhase2(draft, biz, businessSlug, log, startTime);
+      cronLog.result = log.result || 'phase2_complete';
+      await logCronInvocation(cronLog);
+      return response;
     }
 
     // PRIORITY 3: Phase 1 — start a new post
     log.steps.push({ step: 'phase', value: 1 });
-    return await runPhase1(biz, businessSlug, log, startTime);
+    const response = await runPhase1(biz, businessSlug, log, startTime);
+    cronLog.result = log.result || 'phase1_complete';
+    await logCronInvocation(cronLog);
+    return response;
 
   } catch (err) {
     log.result = 'fatal_error';
     log.steps.push({ step: 'fatal', error: err.message });
+    cronLog.result = 'fatal_error';
+    cronLog.error = err.message.substring(0, 500);
+    await logCronInvocation(cronLog);
     await sendSms(`🚨 Blog autopilot FATAL ERROR (${businessSlug}):\n${err.message.substring(0, 150)}`);
     return NextResponse.json({ error: err.message, ...log }, { status: 500 });
   }
@@ -231,7 +262,6 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
 
       const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
 
-      // FIX: Save category from writer metadata, fall back to draft's original category
       await supabase.from('blog_generated_posts').update({
         title: metadata.title, slug: metadata.slug,
         meta_description: metadata.meta_description,
@@ -270,7 +300,6 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
         return NextResponse.json({ success: true, ...log });
       }
 
-      // FIX: Save category from writer metadata, fall back to draft's original category
       await supabase.from('blog_generated_posts').update({
         title: metadata.title, slug: metadata.slug,
         meta_description: metadata.meta_description,
