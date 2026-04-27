@@ -384,6 +384,7 @@ async function handleFull(body, businessSlug) {
 
   const startTime = Date.now();
   const steps = [];
+  let postId = null; // Track post ID for cleanup on failure
 
   try {
     const { data: biz } = await supabase
@@ -432,14 +433,14 @@ async function handleFull(body, businessSlug) {
       word_count: 0,
     }).select().single();
 
-    const postId = post.id;
+    postId = post.id; // Now tracked for cleanup
 
     // ── STEP 2: Write ──
     const { business: bizCtx, brandKit: bk, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
     const contentOutput = await writeContent(bk, existingPosts, research, postType, targetKeyword, notes || '', referencePosts, bizCtx);
 
     if (!contentOutput || contentOutput.length < 100) {
-      return NextResponse.json({ error: `Content too short (${(contentOutput || '').length} chars)` }, { status: 500 });
+      throw new Error(`Content too short (${(contentOutput || '').length} chars)`);
     }
 
     await supabase.from('blog_generated_posts').update({
@@ -548,6 +549,18 @@ async function handleFull(body, businessSlug) {
     });
   } catch (err) {
     console.error(`[blog-farm] Full pipeline error:`, err);
+
+    // FIX: Mark post as rejected so it doesn't become a zombie
+    if (postId) {
+      try {
+        await supabase.from('blog_generated_posts').update({
+          status: 'rejected',
+          qc_notes: JSON.stringify({ pipeline_error: err.message }),
+          updated_at: new Date().toISOString(),
+        }).eq('id', postId);
+      } catch { /* last resort — don't throw from catch */ }
+    }
+
     return NextResponse.json({ error: err.message, steps, elapsed: `${Date.now() - startTime}ms` }, { status: 500 });
   }
 }

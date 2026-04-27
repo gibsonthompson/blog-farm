@@ -241,7 +241,7 @@ async function runPhase1(biz, businessSlug, log, startTime) {
   } catch (err) {
     log.result = 'write_error';
     log.steps.push({ step: 'write', error: err.message });
-    await supabase.from('blog_generated_posts').update({ status: 'failed' }).eq('id', postId);
+    await supabase.from('blog_generated_posts').update({ status: 'rejected' }).eq('id', postId);
     return NextResponse.json({ success: false, ...log });
   }
 }
@@ -339,7 +339,7 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
   } catch (err) {
     log.result = 'template_error';
     log.steps.push({ step: 'template', error: err.message });
-    await supabase.from('blog_generated_posts').update({ status: 'failed' }).eq('id', postId);
+    await supabase.from('blog_generated_posts').update({ status: 'rejected' }).eq('id', postId);
     await sendSms(`❌ Blog autopilot template error (${businessSlug}):\n${err.message.substring(0, 100)}`);
     return NextResponse.json({ success: false, ...log });
   }
