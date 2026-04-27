@@ -61,6 +61,9 @@ export async function GET(request) {
     }
 
     // PRIORITY 1: Retry approved posts (were cadence-blocked)
+    // FIX: If still cadence-blocked, DON'T return — fall through to Phase 2/Phase 1.
+    // The approved post stays in the queue for the next cron cycle.
+    // This prevents cadence-blocked posts from starving the entire pipeline.
     const { data: approved } = await supabase
       .from('blog_generated_posts')
       .select('id, title')
@@ -75,22 +78,24 @@ export async function GET(request) {
       try {
         const pubResult = await publishPost(approved.id);
         if (pubResult.blocked) {
-          log.result = 'still_cadence_blocked';
-          log.steps.push({ step: 'publish', status: 'still_blocked' });
+          // Cadence still blocking — log it but CONTINUE to process other work
+          log.steps.push({ step: 'publish', status: 'still_blocked', note: 'falling through to process drafts' });
+          // Don't return here — fall through to Phase 2 and Phase 1
         } else {
+          // Published successfully — we're done for this cycle
           log.result = 'retry_published';
           log.steps.push({ step: 'publish', status: 'success' });
+          cronLog.result = log.result;
+          await logCronInvocation(cronLog);
+          return NextResponse.json({ success: true, ...log });
         }
       } catch (err) {
-        log.result = 'retry_error';
-        log.steps.push({ step: 'publish', error: err.message });
+        log.steps.push({ step: 'publish', error: err.message, note: 'falling through to process drafts' });
+        // Don't return on publish error either — still try to process drafts
       }
-      cronLog.result = log.result;
-      await logCronInvocation(cronLog);
-      return NextResponse.json({ success: true, ...log });
     }
 
-    // PRIORITY 2: Phase 2 — process existing draft
+    // PRIORITY 2: Phase 2 — process existing draft (pipeline_step = 1)
     const { data: draft } = await supabase
       .from('blog_generated_posts')
       .select('*')
@@ -110,6 +115,16 @@ export async function GET(request) {
     }
 
     // PRIORITY 3: Phase 1 — start a new post
+    // Skip if we had a cadence-blocked approved post — don't pile up more content
+    // when we can't even publish what we have.
+    if (approved) {
+      log.result = 'still_cadence_blocked';
+      log.steps.push({ step: 'skip_phase1', reason: 'Approved post waiting to publish — not generating new content until backlog clears' });
+      cronLog.result = log.result;
+      await logCronInvocation(cronLog);
+      return NextResponse.json({ success: true, ...log });
+    }
+
     log.steps.push({ step: 'phase', value: 1 });
     const response = await runPhase1(biz, businessSlug, log, startTime);
     cronLog.result = log.result || 'phase1_complete';
