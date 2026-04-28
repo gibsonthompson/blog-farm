@@ -13,16 +13,25 @@ export const maxDuration = 300;
 const MIN_QC_OVERALL = 7;
 const MIN_QC_INFO_GAIN = 6;
 
-/**
- * Persistent cron log helper — writes to blog_cron_logs in Supabase
- * so we can diagnose cron issues without Vercel's 30-min log window.
- */
 async function logCronInvocation(entry) {
   try { await supabase.from('blog_cron_logs').insert(entry); } catch { /* table may not exist yet */ }
 }
 
 /**
  * GET /api/cron/autopilot?business=callbird
+ *
+ * Called TWICE per day per business (morning + afternoon).
+ * Each call does exactly ONE action in priority order:
+ *   1. Publish approved post (fast, ~1-9s)
+ *   2. Phase 2: template + QC + publish (~80-210s)
+ *   3. Phase 1: research + write (~230s)
+ *
+ * Typical daily flow:
+ *   Morning  → Phase 2 (process yesterday's draft) → publishes
+ *   Afternoon → Phase 1 (research + write new draft)
+ *   Next morning → Phase 2 → publishes
+ *   ...
+ * Result: 1 post per business per day.
  */
 export async function GET(request) {
   const authHeader = request.headers.get('authorization');
@@ -60,10 +69,7 @@ export async function GET(request) {
       return NextResponse.json({ error: `Business "${businessSlug}" not found` }, { status: 404 });
     }
 
-    // PRIORITY 1: Retry approved posts (were cadence-blocked)
-    // FIX: If still cadence-blocked, DON'T return — fall through to Phase 2/Phase 1.
-    // The approved post stays in the queue for the next cron cycle.
-    // This prevents cadence-blocked posts from starving the entire pipeline.
+    // ── PRIORITY 1: Publish approved post ──
     const { data: approved } = await supabase
       .from('blog_generated_posts')
       .select('id, title')
@@ -78,24 +84,24 @@ export async function GET(request) {
       try {
         const pubResult = await publishPost(approved.id);
         if (pubResult.blocked) {
-          // Cadence still blocking — log it but CONTINUE to process other work
-          log.steps.push({ step: 'publish', status: 'still_blocked', note: 'falling through to process drafts' });
-          // Don't return here — fall through to Phase 2 and Phase 1
+          cronLog.result = 'still_cadence_blocked';
+          log.result = 'still_cadence_blocked';
+          log.steps.push({ step: 'publish', status: 'still_blocked' });
         } else {
-          // Published successfully — we're done for this cycle
+          cronLog.result = 'retry_published';
           log.result = 'retry_published';
           log.steps.push({ step: 'publish', status: 'success' });
-          cronLog.result = log.result;
-          await logCronInvocation(cronLog);
-          return NextResponse.json({ success: true, ...log });
         }
       } catch (err) {
-        log.steps.push({ step: 'publish', error: err.message, note: 'falling through to process drafts' });
-        // Don't return on publish error either — still try to process drafts
+        cronLog.result = 'retry_error';
+        log.result = 'retry_error';
+        log.steps.push({ step: 'publish', error: err.message });
       }
+      await logCronInvocation(cronLog);
+      return NextResponse.json({ success: true, ...log });
     }
 
-    // PRIORITY 2: Phase 2 — process existing draft (pipeline_step = 1)
+    // ── PRIORITY 2: Phase 2 — process draft ──
     const { data: draft } = await supabase
       .from('blog_generated_posts')
       .select('*')
@@ -114,17 +120,7 @@ export async function GET(request) {
       return response;
     }
 
-    // PRIORITY 3: Phase 1 — start a new post
-    // Skip if we had a cadence-blocked approved post — don't pile up more content
-    // when we can't even publish what we have.
-    if (approved) {
-      log.result = 'still_cadence_blocked';
-      log.steps.push({ step: 'skip_phase1', reason: 'Approved post waiting to publish — not generating new content until backlog clears' });
-      cronLog.result = log.result;
-      await logCronInvocation(cronLog);
-      return NextResponse.json({ success: true, ...log });
-    }
-
+    // ── PRIORITY 3: Phase 1 — new post ──
     log.steps.push({ step: 'phase', value: 1 });
     const response = await runPhase1(biz, businessSlug, log, startTime);
     cronLog.result = log.result || 'phase1_complete';
@@ -142,9 +138,8 @@ export async function GET(request) {
   }
 }
 
-/**
- * PHASE 1: Pick topic → Research → Write → save as "draft"
- */
+// ── PHASE 1: Research + Write (~230s) ──
+
 async function runPhase1(biz, businessSlug, log, startTime) {
   let targetKeyword, postType, queueId;
 
@@ -246,9 +241,8 @@ async function runPhase1(biz, businessSlug, log, startTime) {
   }
 }
 
-/**
- * PHASE 2: Template → QC → Quality Gate → Publish
- */
+// ── PHASE 2: Template + QC + Publish (~80-210s) ──
+
 async function runPhase2(draft, biz, businessSlug, log, startTime) {
   const postId = draft.id;
   const contentOutput = draft.html_content;
@@ -376,26 +370,30 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
   // ── Quality Gate ──
   const overall = qcResult.scores?.overall || 0;
   const infoGain = qcResult.scores?.information_gain || 0;
-  const hasHallucinations = (qcResult.hallucination_flags?.length || 0) > 0;
+  const hallucinationCount = qcResult.hallucination_flags?.length || 0;
+  const bizFlagCount = qcResult.business_protection_flags?.length || 0;
+  const factualAccuracy = qcResult.scores?.factual_accuracy || 0;
+
+  const hallucinationsSafe = hallucinationCount === 0 ||
+    (hallucinationCount <= 2 && overall >= MIN_QC_OVERALL && factualAccuracy >= 7);
 
   const shouldPublish =
     overall >= MIN_QC_OVERALL &&
     infoGain >= MIN_QC_INFO_GAIN &&
-    !hasHallucinations &&
-    (qcResult.business_protection_flags?.length || 0) <= 1 &&
+    hallucinationsSafe &&
+    bizFlagCount <= 1 &&
     qcResult.verdict !== 'reject';
 
   if (!shouldPublish) {
-    const bizFlagCount = qcResult.business_protection_flags?.length || 0;
     const reason = overall < MIN_QC_OVERALL ? `QC ${overall} < ${MIN_QC_OVERALL}`
       : infoGain < MIN_QC_INFO_GAIN ? `Info gain ${infoGain} < ${MIN_QC_INFO_GAIN}`
-      : hasHallucinations ? 'Hallucination flags'
+      : !hallucinationsSafe ? `${hallucinationCount} hallucination flags (factual_accuracy: ${factualAccuracy})`
       : bizFlagCount > 1 ? `${bizFlagCount} business protection flags`
       : 'QC verdict: reject';
 
     await supabase.from('blog_generated_posts').update({
       status: 'revision_needed', pipeline_step: 2,
-      qc_score: qcResult,
+      qc_score: qcResult.scores,
       qc_notes: JSON.stringify({ scores: qcResult.scores, held_reason: reason }),
     }).eq('id', postId);
 
@@ -403,6 +401,14 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
     log.steps.push({ step: 'quality_gate', decision: 'HOLD', reason });
     await sendSms(`⚠️ Blog post needs review (${businessSlug}):\n"${metadata.title}"\nReason: ${reason}\nScores: ${overall}/10`);
     return NextResponse.json({ success: true, ...log });
+  }
+
+  if (hallucinationCount > 0) {
+    log.steps.push({
+      step: 'hallucination_triage', decision: 'AUTO_PUBLISH_WITH_WARNING',
+      flagCount: hallucinationCount, flags: qcResult.hallucination_flags,
+    });
+    await sendSms(`📝 Auto-published with ${hallucinationCount} hallucination flag(s) (${businessSlug}):\n"${metadata.title}"\nFlags: ${qcResult.hallucination_flags.slice(0, 2).join('; ')}\nFactual accuracy: ${factualAccuracy}/10`);
   }
 
   log.steps.push({ step: 'quality_gate', decision: 'AUTO_PUBLISH', scores: qcResult.scores });

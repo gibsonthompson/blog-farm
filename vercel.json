@@ -1,24 +1,13 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/performance",
-      "schedule": "0 10 * * *"
-    },
-    {
-      "path": "/api/cron/autopilot?business=callbird",
-      "schedule": "0 13 * * *"
-    },
-    {
-      "path": "/api/cron/autopilot?business=voiceai-connect",
-      "schedule": "0 15 * * *"
-    },
-    {
-      "path": "/api/cron/autopilot?business=gtc-group",
-      "schedule": "0 17 * * *"
-    },
-    {
-      "path": "/api/cron/autopilot?business=rsa",
-      "schedule": "0 19 * * *"
-    }
+    { "path": "/api/cron/autopilot?business=callbird&run=1",        "schedule": "0 6 * * *" },
+    { "path": "/api/cron/autopilot?business=callbird&run=2",        "schedule": "0 13 * * *" },
+    { "path": "/api/cron/autopilot?business=voiceai-connect&run=1", "schedule": "0 7 * * *" },
+    { "path": "/api/cron/autopilot?business=voiceai-connect&run=2", "schedule": "0 15 * * *" },
+    { "path": "/api/cron/autopilot?business=gtc-group&run=1",       "schedule": "0 8 * * *" },
+    { "path": "/api/cron/autopilot?business=gtc-group&run=2",       "schedule": "0 17 * * *" },
+    { "path": "/api/cron/autopilot?business=rsa&run=1",             "schedule": "0 9 * * *" },
+    { "path": "/api/cron/autopilot?business=rsa&run=2",             "schedule": "0 19 * * *" },
+    { "path": "/api/cron/performance",                              "schedule": "0 10 * * *" }
   ]
 }
