@@ -7,6 +7,7 @@ const BUSINESSES = [
   { slug: 'gtc-group', name: 'The GTC Group', color: '#c9a227', bg: '#0f172a', domain: 'globaltransportconsultinggroup.com', linkFormat: 'nextjs' },
   { slug: 'rsa', name: 'RSA', color: '#84d2f2', bg: '#273373', domain: 'waterhelpme.com', linkFormat: 'nextjs' },
   { slug: 'jb-lawn', name: 'JB Lawn Care', color: '#6BBF1A', bg: '#1a3a0a', domain: 'jblawncareandhauling.com', linkFormat: 'nextjs' },
+  { slug: 'greenline', name: 'Green Line Lawn Care', color: '#a6ce2a', bg: '#010101', domain: 'greenlinelawncarellc.com', linkFormat: 'nextjs' },
 ];
 
 const STATUS_COLORS = {
