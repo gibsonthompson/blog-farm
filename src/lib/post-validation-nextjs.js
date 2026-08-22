@@ -29,10 +29,11 @@
 const VAC = {
   author: 'Gibson Thompson',
   domain: 'myvoiceaiconnect.com',
-  validPrices: [],            // e.g. ['$99', '$299', '$499']  <-- CONFIRM then fill (enables off-list flag)
-  bannedPrices: [],           // VAC-specific prices that must never appear. NOT $49: it is legit
-                              // in blog context (competitor pricing, agency-pricing advice).
-  priceRange: [20, 600],      // only monthly-looking $ amounts in this range are checked
+  // Real platform fees (what agencies pay VoiceAI Connect): Free $0, Pro $99, Scale $499.
+  // Client-resale, competitor, and market-range prices are NOT VAC's price and are left alone.
+  realPlatformPrices: ['$0', '$99', '$499'],
+  fabTierNames: ['Starter', 'Professional', 'Enterprise'], // real plan names are Free / Pro / Scale
+  priceRange: [50, 600],      // platform-fee band to inspect
   // True white-label leaks only. A2P 10DLC / SOC 2 are generic compliance standards
   // VAC can also claim, so they are NOT treated as leaks.
   callbirdArtifacts: [
@@ -114,19 +115,37 @@ export function validateNextjsPost(html, metadata = {}) {
     }
   }
 
-  // Pricing ground truth
-  for (const banned of VAC.bannedPrices) {
-    if (html.includes(`${banned}/mo`) || html.includes(`${banned} per month`) || html.includes(`${banned}/month`)) {
-      errors.push(`Old/banned price detected: ${banned}`);
-    }
+  // Pricing ground truth (context-aware). Only flag a price ATTRIBUTED TO VoiceAI Connect
+  // as a platform fee that is not a real tier. Resale ("charge clients $X"), competitor,
+  // and market-range prices are legitimate and left alone.
+  const resaleCtx = /charge|client pays|clients pay|per client|per-client|resell|resale|markup|you charge|bill your|to your client|set your own price|what to charge/;
+  const competitorCtx = /echowin|smith|ruby|dialzara|goodcall|synthflow|bland|autocalls|voxtell|callin|insighto|trillet|front desk|rosie|abby|nexa/;
+  const priceRe = /\$(\d{2,3})(?:\.\d{2})?(?!\d)/g;
+  const badVacPrices = new Set();
+  let pm;
+  while ((pm = priceRe.exec(text)) !== null) {
+    const n = parseInt(pm[1], 10);
+    if (n < VAC.priceRange[0] || n > VAC.priceRange[1]) continue;
+    if (VAC.realPlatformPrices.includes('$' + pm[1])) continue;
+    const win = text.slice(Math.max(0, pm.index - 70), Math.min(text.length, pm.index + 70)).toLowerCase();
+    const vacAttributed = win.includes('voiceai connect') || win.includes('platform fee') || win.includes('platform cost');
+    if (!vacAttributed) continue;
+    if (resaleCtx.test(win) || competitorCtx.test(win)) continue;
+    badVacPrices.add('$' + pm[1]);
   }
-  if (VAC.validPrices.length > 0) {
-    const mentioned = html.match(/\$\d+/g) || [];
-    const bad = [...new Set(mentioned)].filter(p => {
-      const n = parseInt(p.replace('$', ''), 10);
-      return n >= VAC.priceRange[0] && n <= VAC.priceRange[1] && !VAC.validPrices.includes(p);
-    });
-    if (bad.length) errors.push(`Unrecognized pricing: ${bad.join(', ')} -- valid prices are ${VAC.validPrices.join(', ')}. Verify against current pricing.`);
+  if (badVacPrices.size) {
+    errors.push(`VoiceAI Connect platform price stated as ${[...badVacPrices].join(', ')} -- real plans are Free ($0), Pro ($99), Scale ($499)`);
+  }
+
+  // Fabricated tier names (VAC plans are Free / Pro / Scale)
+  const fabFound = VAC.fabTierNames.filter(name => {
+    const i = textLower.indexOf(name.toLowerCase());
+    if (i < 0) return false;
+    const around = textLower.slice(Math.max(0, i - 100), i + 100);
+    return around.includes('voiceai connect') || around.includes(' tier') || around.includes(' plan') || /\$\d/.test(around);
+  });
+  if (fabFound.length) {
+    errors.push(`Fabricated VoiceAI Connect tier name(s): ${fabFound.join(', ')} -- real plans are Free, Pro, Scale`);
   }
 
   // Competitor domain links
