@@ -3,6 +3,7 @@ import { runResearch, writeContent, wrapInTemplate, sanitizeGeneratedHtml, injec
 import { runQualityControl } from '@/lib/quality-control.js';
 import { validateKeywordUniqueness, validatePostUniqueness } from '@/lib/dedup-validator.js';
 import { validatePost } from '@/lib/post-validation.js';
+import { validateNextjsPost } from '@/lib/post-validation-nextjs.js';
 import supabase from '@/lib/supabase.js';
 
 export const maxDuration = 300;
@@ -239,6 +240,24 @@ async function handleTemplate(body, businessSlug) {
 
       wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
 
+
+      // GEO + ground-truth gate for nextjs (VoiceAI Connect) content fragments.
+      // validatePost is CallBird/static-only, so nextjs mode had no quality gate.
+      const geoCheck = validateNextjsPost(html, metadata);
+      if (!geoCheck.valid) {
+        await supabase.from('blog_generated_posts').update({
+          title: metadata.title, slug: metadata.slug, html_content: html,
+          word_count: wordCount, category: metadata.category || post.category,
+          status: 'revision_needed',
+          qc_notes: JSON.stringify({ validation_errors: geoCheck.errors, validation_warnings: geoCheck.warnings }),
+          updated_at: new Date().toISOString(),
+        }).eq('id', postId);
+        return NextResponse.json({
+          success: true, step: 3, postId,
+          validation: { valid: false, errors: geoCheck.errors, warnings: geoCheck.warnings, stats: geoCheck.stats },
+          post: { title: metadata.title, slug: metadata.slug, word_count: wordCount, status: 'revision_needed' },
+        });
+      }
     } else {
       const result = await wrapInTemplate(
         post.html_content, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix
@@ -467,6 +486,23 @@ async function handleFull(body, businessSlug) {
       html = html.replace(/\*\*STATISTICS CHECK[\s\S]*$/, '').trim();
       html = html.replace(/<self_review>[\s\S]*?<\/self_review>/gi, '').trim();
       wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(w => w.length > 0).length;
+
+      // GEO + ground-truth gate for nextjs (VoiceAI Connect) content fragments.
+      const geoCheck = validateNextjsPost(html, metadata);
+      if (!geoCheck.valid) {
+        await supabase.from('blog_generated_posts').update({
+          title: metadata.title, slug: metadata.slug, html_content: html,
+          word_count: wordCount, category: metadata.category || postType,
+          status: 'revision_needed',
+          qc_notes: JSON.stringify({ validation_errors: geoCheck.errors }),
+          updated_at: new Date().toISOString(),
+        }).eq('id', postId);
+        return NextResponse.json({
+          success: true, postId, steps,
+          validation: { valid: false, errors: geoCheck.errors },
+          post: { title: metadata.title, slug: metadata.slug, word_count: wordCount, status: 'revision_needed' },
+        });
+      }
     } else {
       const result = await wrapInTemplate(contentOutput, biz.domain, biz.phone, biz.gtm_id, biz.blog_file_prefix);
       metadata = result.metadata;
@@ -558,7 +594,7 @@ async function handleFull(body, businessSlug) {
           qc_notes: JSON.stringify({ pipeline_error: err.message }),
           updated_at: new Date().toISOString(),
         }).eq('id', postId);
-      } catch { /* last resort — don't throw from catch */ }
+      } catch { /* last resort, do not throw from catch */ }
     }
 
     return NextResponse.json({ error: err.message, steps, elapsed: `${Date.now() - startTime}ms` }, { status: 500 });
