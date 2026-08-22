@@ -80,9 +80,12 @@ export function validateNextjsPost(html, metadata = {}) {
   if (stats < 1) errors.push('No statistics found -- add 2 to 3 concrete, sourced numbers');
   else if (stats < 2) warnings.push(`Only ${stats} statistic -- target 2 to 3 sourced numbers`);
 
-  // External citations (GEO lever)
+  // External citations (GEO lever). The writer degrades to zero external links when
+  // research finds no URLs (rather than fabricate), so only a citation-less post
+  // blocks; a single citation warns. Normal posts carry 2 to 3.
   const citations = countExternalCitations(html);
-  if (citations < MIN_CITATIONS) errors.push(`Only ${citations} external citation(s) -- cite at least ${MIN_CITATIONS} credible sources inline`);
+  if (citations === 0) errors.push('No external citations -- cite credible sources inline (2 to 3 target)');
+  else if (citations < MIN_CITATIONS) warnings.push(`Only ${citations} external citation -- target ${MIN_CITATIONS} to 3`);
 
   // Quotation (GEO lever)
   if (countQuotes(html) < 1) warnings.push('No direct quotation found -- add one attributed quote');

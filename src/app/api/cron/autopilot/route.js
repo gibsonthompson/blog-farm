@@ -4,6 +4,7 @@ import { runResearch, writeContent, wrapInTemplate, sanitizeGeneratedHtml, injec
 import { runQualityControl } from '@/lib/quality-control.js';
 import { validatePost } from '@/lib/post-validation.js';
 import { publishPost } from '@/lib/publish.js';
+import { validateNextjsPost } from '@/lib/post-validation-nextjs.js';
 import { extractContentAttributes } from '@/lib/performance.js';
 import { sendSms } from '@/lib/sms.js';
 import supabase from '@/lib/supabase.js';
@@ -101,7 +102,7 @@ export async function GET(request) {
       return NextResponse.json({ success: true, ...log });
     }
 
-    // ── PRIORITY 2: Phase 2 — process draft ──
+    // ── PRIORITY 2: Phase 2: process draft ──
     const { data: draft } = await supabase
       .from('blog_generated_posts')
       .select('*')
@@ -120,7 +121,7 @@ export async function GET(request) {
       return response;
     }
 
-    // ── PRIORITY 3: Phase 1 — new post ──
+    // ── PRIORITY 3: Phase 1: new post ──
     log.steps.push({ step: 'phase', value: 1 });
     const response = await runPhase1(biz, businessSlug, log, startTime);
     cronLog.result = log.result || 'phase1_complete';
@@ -270,6 +271,22 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
       html = html.replace(/<self_review>[\s\S]*?<\/self_review>/gi, '').trim();
 
       const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
+
+      // GEO + ground-truth gate for nextjs (VoiceAI Connect). Autopilot is the
+      // automated publisher, so this is where the deterministic gate must run.
+      const geoCheck = validateNextjsPost(html, metadata);
+      if (!geoCheck.valid) {
+        await supabase.from('blog_generated_posts').update({
+          title: metadata.title, slug: metadata.slug, html_content: html,
+          word_count: wordCount, category: metadata.category || draft.category,
+          status: 'revision_needed', pipeline_step: 2,
+          qc_notes: JSON.stringify({ validation_errors: geoCheck.errors, validation_warnings: geoCheck.warnings }),
+        }).eq('id', postId);
+        log.result = 'validation_failed';
+        log.steps.push({ step: 'template', mode: 'nextjs', errors: geoCheck.errors });
+        await sendSms(`VAC post held for review (${businessSlug}):\n"${metadata.title}"\n${geoCheck.errors.slice(0, 3).join('; ')}`);
+        return NextResponse.json({ success: true, ...log });
+      }
 
       await supabase.from('blog_generated_posts').update({
         title: metadata.title, slug: metadata.slug,
