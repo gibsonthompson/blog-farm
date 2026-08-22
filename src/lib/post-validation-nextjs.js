@@ -29,13 +29,14 @@
 const VAC = {
   author: 'Gibson Thompson',
   domain: 'myvoiceaiconnect.com',
-  validPrices: [],            // e.g. ['$99', '$299', '$499']  <-- CONFIRM then fill
-  bannedPrices: ['$49'],      // old prices that must never appear
+  validPrices: [],            // e.g. ['$99', '$299', '$499']  <-- CONFIRM then fill (enables off-list flag)
+  bannedPrices: [],           // VAC-specific prices that must never appear. NOT $49: it is legit
+                              // in blog context (competitor pricing, agency-pricing advice).
   priceRange: [20, 600],      // only monthly-looking $ amounts in this range are checked
-  // CallBird artifacts must NOT leak into the white-label VAC brand
+  // True white-label leaks only. A2P 10DLC / SOC 2 are generic compliance standards
+  // VAC can also claim, so they are NOT treated as leaks.
   callbirdArtifacts: [
     'callbirdai.com', 'callbird', '(505) 594-5806', '505-594-5806', '+15055945806',
-    'A2P 10DLC Compliant', 'SOC 2 Type II',
   ],
   competitorDomains: [
     'smith.ai', 'ruby.com', 'dialzara.com', 'myaifrontdesk.com', 'goodcall.com',
