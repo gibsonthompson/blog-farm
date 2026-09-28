@@ -46,7 +46,7 @@ export async function fetchPagePerformance(siteUrl, days = 28) {
     const body = {
       startDate: fmtDate(startDate), endDate: fmtDate(endDate),
       dimensions: ['page'],
-      dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'contains', expression: '/blog-' }] }],
+      dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'contains', expression: '/blog' }] }],
       rowLimit: 25000, startRow, type: 'web',
     };
     let response;
@@ -90,7 +90,7 @@ export async function fetchPagePerformanceRange(siteUrl, startDaysAgo, endDaysAg
     const body = {
       startDate: fmtDate(startDate), endDate: fmtDate(endDate),
       dimensions: ['page'],
-      dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'contains', expression: '/blog-' }] }],
+      dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'contains', expression: '/blog' }] }],
       rowLimit: 25000, startRow, type: 'web',
     };
     let response;
@@ -149,7 +149,7 @@ export async function fetchCannibalizationData(siteUrl, days = 28) {
       siteUrl, requestBody: {
         startDate: fmtDate(startDate), endDate: fmtDate(endDate),
         dimensions: ['query', 'page'],
-        dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'contains', expression: '/blog-' }] }],
+        dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'contains', expression: '/blog' }] }],
         rowLimit: 25000, type: 'web',
       },
     });
@@ -537,11 +537,13 @@ export function extractContentAttributes(html, metadata, qcResult) {
     primary_keyword_in_first_100: keywordInFirst100,
 
     // ── Link signals ──
-    // Count internal links: both blog-{slug}.html (static) and /blog/{slug} (nextjs) formats
-    internal_link_count: (html.match(/href="(?:blog-[^"]*\.html|\/blog\/[^"]+)"/gi)||[]).length,
-    // External links: any full URL that isn't an internal blog link or same-domain link
-    external_link_count: (html.match(/href="https?:\/\/[^"]+"/gi)||[]).length
-      - (html.match(/href="https?:\/\/[^"]*(?:callbirdai\.com|myvoiceaiconnect\.com)[^"]*"/gi)||[]).length,
+    // Count internal links: both blog-{slug}.html (static) and /blog/{slug} (nextjs) formats,
+    // plus root-relative links (/services/x, /areas/x) which are internal by definition.
+    internal_link_count: (html.match(/href="(?:blog-[^"]*\.html|\/blog\/[^"]+|\/[a-z][^"]*)"/gi)||[]).length,
+    // External links: full http(s) URLs. We cannot know every business domain here,
+    // so external is counted as absolute URLs and the internal absolute-domain links
+    // are subtracted at analysis time if needed. Root-relative links never count here.
+    external_link_count: (html.match(/href="https?:\/\/[^"]+"/gi)||[]).length,
 
     // ── Structural elements ──
     has_comparison_table: /<table|table-wrap/i.test(html),
@@ -666,7 +668,7 @@ export async function discoverContentGaps(businessId) {
       siteUrl, requestBody: {
         startDate: fmtDate(startDate), endDate: fmtDate(endDate),
         dimensions: ['query'],
-        dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'contains', expression: '/blog-' }] }],
+        dimensionFilterGroups: [{ filters: [{ dimension: 'page', operator: 'contains', expression: '/blog' }] }],
         rowLimit: 1000, type: 'web',
       },
     });
@@ -682,6 +684,9 @@ export async function discoverContentGaps(businessId) {
   const existingKeywords = (posts || []).map(p => (p.primary_keyword || p.title || '').toLowerCase());
   const existingSlugs = (posts || []).map(p => p.slug.toLowerCase());
 
+  // Build brand-name tokens to skip brand queries (business-aware, not hardcoded).
+  const brandTokens = (biz.name || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+
   // Find queries with high impressions that don't match any existing post
   const rawGaps = allQueries
     .filter(q => q.impressions >= 20 && q.position > 5) // Showing up but not dominating
@@ -690,7 +695,7 @@ export async function discoverContentGaps(businessId) {
       // EDGE CASE #9: Filter junk queries
       if (qLower.length < 5) return false; // Skip "ok", "yes", "pricing" etc.
       if (/^(ok|yes|no|pricing|test|hello)$/i.test(qLower)) return false;
-      if (qLower.includes('callbird')) return false; // Skip brand queries
+      if (brandTokens.some(t => qLower.includes(t))) return false; // Skip brand queries
       // Skip if we have a post targeting this keyword
       return !existingKeywords.some(kw => kw.includes(qLower) || qLower.includes(kw))
         && !existingSlugs.some(s => qLower.split(' ').every(w => s.includes(w)));

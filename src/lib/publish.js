@@ -4,6 +4,7 @@ import { submitSitemap } from './google-search-console.js';
 import { submitToIndexNow } from './indexnow.js';
 import { checkPublishCadence } from './cadence.js';
 import { buildBacklinkUpdates } from './reverse-links.js';
+import { applyNextjsReverseLinks } from './reverse-links-nextjs.js';
 import { generateRssFeed } from './rss.js';
 
 function buildBlogCard(post, domain, prefix) {
@@ -145,9 +146,19 @@ export async function publishPost(postId) {
         business_id: biz.id, url: blogUrl, title: post.title, slug: post.slug,
         primary_keyword: post.primary_keyword, secondary_keywords: post.secondary_keywords,
         meta_description: post.meta_description, category: post.category,
+        cluster: post.cluster || null, status: 'published',
         publish_date: today, word_count: post.word_count,
       }, { onConflict: 'business_id,slug', ignoreDuplicates: false });
       results.steps.push({ step: 'database_update', status: 'success' });
+
+      // Cluster-aware reverse-linking: update 2-3 related published posts to
+      // link to this new one. nextjs equivalent of the static backlink commit.
+      let revalidateExtra = [];
+      try {
+        const rl = await applyNextjsReverseLinks(biz.id, post, 3);
+        revalidateExtra = rl.updatedSlugs;
+        if (rl.count > 0) results.steps.push({ step: 'reverse_links', status: 'success', count: rl.count, slugs: rl.updatedSlugs });
+      } catch (err) { results.errors.push({ step: 'reverse_links', error: err.message }); }
 
       // Trigger ISR revalidation
       if (biz.revalidate_url) {
@@ -159,6 +170,18 @@ export async function publishPost(postId) {
           });
           const data = await res.json().catch(() => ({ raw: 'non-json response' }));
           results.steps.push({ step: 'isr_revalidation', status: 'success', ...data });
+
+          // Also revalidate any existing posts we injected backlinks into,
+          // so the new internal links appear without waiting for ISR expiry.
+          for (const slug of revalidateExtra) {
+            try {
+              await fetch(biz.revalidate_url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ secret: process.env.REVALIDATION_SECRET, slug }),
+              });
+            } catch { /* best-effort */ }
+          }
         } catch (err) {
           results.errors.push({ step: 'isr_revalidation', error: err.message });
         }

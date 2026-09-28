@@ -144,16 +144,25 @@ export async function GET(request) {
 async function runPhase1(biz, businessSlug, log, startTime) {
   let targetKeyword, postType, queueId;
 
+  // Queue read: correct column is target_keyword (not keyword). Use maybeSingle so an
+  // empty queue returns null instead of throwing (the old .single() threw on every
+  // empty queue and silently fell through to the one-at-a-time AI picker, which is
+  // why content became repetitive). Also pull any pre-planned title/notes.
+  let queuedTitle = null, queuedNotes = null, queuedSecondary = null;
   const { data: queued } = await supabase
     .from('blog_content_queue')
     .select('*').eq('business_id', biz.id).eq('status', 'pending')
     .lte('scheduled_date', new Date().toISOString().split('T')[0])
-    .order('scheduled_date', { ascending: true }).limit(1).single();
+    .order('priority', { ascending: true })
+    .order('scheduled_date', { ascending: true }).limit(1).maybeSingle();
 
   if (queued) {
-    targetKeyword = queued.keyword;
+    targetKeyword = queued.target_keyword;
     postType = queued.post_type;
     queueId = queued.id;
+    queuedTitle = queued.title_suggestion || null;
+    queuedNotes = queued.notes || null;
+    queuedSecondary = queued.secondary_keywords || null;
     log.steps.push({ step: 'topic', source: 'queue', keyword: targetKeyword });
     await supabase.from('blog_content_queue').update({ status: 'generating' }).eq('id', queued.id);
   } else {
@@ -202,11 +211,15 @@ async function runPhase1(biz, businessSlug, log, startTime) {
     await supabase.from('blog_generated_posts').delete().in('id', deadIds);
   }
 
+  // Pull the cluster label out of the queued notes (planner writes "Cluster: X").
+  const clusterMatch = (queuedNotes || '').match(/Cluster:\s*([^|]+)/i);
+  const queuedCluster = clusterMatch ? clusterMatch[1].trim() : null;
+
   const { data: post } = await supabase.from('blog_generated_posts').insert({
     business_id: biz.id, title: `[Generating] ${targetKeyword}`, slug: baseSlug,
-    primary_keyword: targetKeyword, category: postType,
+    primary_keyword: targetKeyword, category: postType, cluster: queuedCluster,
     html_content: '<p>Generating...</p>', status: 'pending',
-    generation_prompt: JSON.stringify({ research, targetKeyword, postType, queueId }),
+    generation_prompt: JSON.stringify({ research, targetKeyword, postType, queueId, notes: queuedNotes, titleSuggestion: queuedTitle, secondaryKeywords: queuedSecondary }),
     word_count: 0,
   }).select().single();
 
@@ -214,7 +227,7 @@ async function runPhase1(biz, businessSlug, log, startTime) {
 
   try {
     const { business: bizCtx, brandKit, existingPosts, referencePosts } = await loadBusinessContext(businessSlug);
-    const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, '', referencePosts, bizCtx);
+    const contentOutput = await writeContent(brandKit, existingPosts, research, postType, targetKeyword, queuedNotes || '', referencePosts, bizCtx);
 
     if (!contentOutput || contentOutput.length < 500) throw new Error('Content too short');
 
@@ -238,6 +251,11 @@ async function runPhase1(biz, businessSlug, log, startTime) {
     log.result = 'write_error';
     log.steps.push({ step: 'write', error: err.message });
     await supabase.from('blog_generated_posts').update({ status: 'rejected' }).eq('id', postId);
+    // Return the queue item to pending so it is retried on a future cron rather
+    // than being stranded in 'generating' forever.
+    if (queueId) {
+      await supabase.from('blog_content_queue').update({ status: 'pending' }).eq('id', queueId);
+    }
     return NextResponse.json({ success: false, ...log });
   }
 }
@@ -444,7 +462,9 @@ async function runPhase2(draft, biz, businessSlug, log, startTime) {
     log.steps.push({ step: 'publish', status: 'success', elapsed: `${Date.now() - startTime}ms` });
 
     if (promptData.queueId) {
-      await supabase.from('blog_content_queue').update({ status: 'published' }).eq('id', promptData.queueId);
+      await supabase.from('blog_content_queue')
+        .update({ status: 'published', generated_post_id: postId })
+        .eq('id', promptData.queueId);
     }
   } catch (err) {
     log.result = 'publish_error';
