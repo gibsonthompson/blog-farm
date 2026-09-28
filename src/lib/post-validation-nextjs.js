@@ -82,10 +82,14 @@ export function validateNextjsPost(html, metadata = {}) {
   else if (stats < 2) warnings.push(`Only ${stats} statistic -- target 2 to 3 sourced numbers`);
 
   // External citations (GEO lever). The writer degrades to zero external links when
-  // research finds no URLs (rather than fabricate), so only a citation-less post
-  // blocks; a single citation warns. Normal posts carry 2 to 3.
+  // research finds no URLs (rather than fabricate). Citations genuinely improve a
+  // post, but on niche topics research legitimately returns nothing linkable, and
+  // hard-blocking there creates an unpublishable post through no fault of the writer.
+  // So this is a WARNING, never a blocking error: we keep the signal without the
+  // deadlock. The strategy still requests citations and research still gathers them
+  // when it can.
   const citations = countExternalCitations(html);
-  if (citations === 0) errors.push('No external citations -- cite credible sources inline (2 to 3 target)');
+  if (citations === 0) warnings.push('No external citations -- research returned no linkable sources for this topic (post still publishable)');
   else if (citations < MIN_CITATIONS) warnings.push(`Only ${citations} external citation -- target ${MIN_CITATIONS} to 3`);
 
   // Quotation (GEO lever)
