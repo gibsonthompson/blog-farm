@@ -123,14 +123,29 @@ export function validateNextjsPost(html, metadata = {}) {
   // as a platform fee that is not a real tier. Resale ("charge clients $X"), competitor,
   // and market-range prices are legitimate and left alone.
   const resaleCtx = /charge|client pays|clients pay|per client|per-client|resell|resale|markup|you charge|bill your|to your client|set your own price|what to charge|retail|illustrative/;
-  const competitorCtx = /echowin|smith|ruby|dialzara|goodcall|synthflow|bland|autocalls|voxtell|callin|insighto|trillet|front desk|rosie|abby|nexa|alternative|competitor/;
+  const competitorCtx = /echowin|smith|ruby|dialzara|goodcall|synthflow|bland|autocalls|voxtell|callin|insighto|trillet|front desk|rosie|abby|nexa|air\.?ai|alternative|competitor/;
   const priceRe = /\$(\d{2,3})(?:\.\d{2})?(?!\d)/g;
+
+  // PASS 1: Find every price value that appears in a resale/retail context ANYWHERE in
+  // the post. An agency's retail price to its clients (e.g. "$149/month each") is used
+  // consistently throughout an article, but the "charge your clients" verb is often only
+  // near the FIRST mention. Once a value is established as retail, trust it everywhere and
+  // never flag it as a VAC platform fee.
+  const retailValues = new Set();
+  let rp;
+  const priceReScan = /\$(\d{2,3})(?:\.\d{2})?(?!\d)/g;
+  while ((rp = priceReScan.exec(text)) !== null) {
+    const win = text.slice(Math.max(0, rp.index - 80), Math.min(text.length, rp.index + 80)).toLowerCase();
+    if (resaleCtx.test(win)) retailValues.add(rp[1]);
+  }
+
   const badVacPrices = new Set();
   let pm;
   while ((pm = priceRe.exec(text)) !== null) {
     const n = parseInt(pm[1], 10);
     if (n < VAC.priceRange[0] || n > VAC.priceRange[1]) continue;
     if (VAC.realPlatformPrices.includes('$' + pm[1])) continue;
+    if (retailValues.has(pm[1])) continue; // established as agency retail price elsewhere in the post
     const win = text.slice(Math.max(0, pm.index - 70), Math.min(text.length, pm.index + 70)).toLowerCase();
     const vacAttributed = win.includes('voiceai connect') || win.includes('platform fee') || win.includes('platform cost');
     if (!vacAttributed) continue;
@@ -141,12 +156,26 @@ export function validateNextjsPost(html, metadata = {}) {
     errors.push(`VoiceAI Connect platform price stated as ${[...badVacPrices].join(', ')} -- real plans are Free ($0), Pro ($99), Scale ($499)`);
   }
 
-  // Fabricated tier names (VAC plans are Free / Pro / Scale)
+  // Fabricated tier names (VAC plans are Free / Pro / Scale). Only flag when the tier
+  // word is genuinely attributed to VoiceAI Connect AND not describing a competitor.
+  // Comparison posts legitimately say "Air.ai is built for Enterprise teams" etc., which
+  // must NOT be flagged. Require "voiceai connect" close by AND no competitor name in the
+  // window (competitor mention means the tier belongs to them, not VAC).
   const fabFound = VAC.fabTierNames.filter(name => {
-    const i = textLower.indexOf(name.toLowerCase());
-    if (i < 0) return false;
-    const around = textLower.slice(Math.max(0, i - 100), i + 100);
-    return around.includes('voiceai connect') || around.includes(' tier') || around.includes(' plan') || /\$\d/.test(around);
+    const nameLower = name.toLowerCase();
+    // Scan every occurrence, not just the first.
+    let idx = textLower.indexOf(nameLower);
+    while (idx >= 0) {
+      const around = textLower.slice(Math.max(0, idx - 80), idx + 80);
+      const vacClose = around.includes('voiceai connect');
+      const competitorClose = VAC.competitorNames
+        ? VAC.competitorNames.some(c => around.includes(c.toLowerCase()))
+        : /air\.?ai|synthflow|autocalls|echowin|smith|ruby|dialzara|goodcall|bland|voxtell|insighto|trillet|rosie|abby|nexa/.test(around);
+      // Fabricated VAC tier only if VAC is named nearby AND no competitor is.
+      if (vacClose && !competitorClose) return true;
+      idx = textLower.indexOf(nameLower, idx + 1);
+    }
+    return false;
   });
   if (fabFound.length) {
     errors.push(`Fabricated VoiceAI Connect tier name(s): ${fabFound.join(', ')} -- real plans are Free, Pro, Scale`);
