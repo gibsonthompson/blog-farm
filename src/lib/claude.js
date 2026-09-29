@@ -324,12 +324,15 @@ IMPORTANT: The framework is a GUIDE, not a straitjacket. If a section doesn't ea
 - NEVER recommend a competitor over ${companyName}. Acknowledge strengths honestly, but always show why ${companyName} is the better fit for the target audience.
 
 AEO REQUIREMENTS — MANDATORY, NOT OPTIONAL:
-These rules are as important as factual accuracy. Posts that fail these will be REJECTED by QC.
-- EVERY H2 section MUST open with a 40-60 word ANSWER BLOCK. This is a direct, standalone answer to the question the heading implies. It must make sense if quoted by ChatGPT with zero surrounding context. If your first sentence under an H2 is background, context, or a transition — rewrite it as a direct answer.
-- FIRST 200 WORDS: Open per your content_strategy instructions (scenario, math, framework — whatever it says). But within those first 200 words, you MUST explicitly mention: the product name (${companyName}), at least one price point, and the target audience. AI engines cite the first 30% of content for 55% of responses — if the product and price aren't there, competitors get cited instead.
-- Include 2+ SPECIFIC DATA POINTS per 300 words of content. Use verified statistics AND pricing calculations. Sections with 3+ data points per 300 words get cited 2x more often by AI engines.
-- Every FAQ answer must START with the substantive answer in the first sentence — not "Yes" or "No" alone. The first sentence IS the answer. Supporting detail follows.
-- For ANY comparison content, include an HTML comparison TABLE near the top with clear column headers. AI engines extract these directly.
+These rules are as important as factual accuracy. Posts that fail these will be REJECTED by QC. They are based on measured 2026 AI-citation data.
+- QUICK ANSWER BLOCK: Open with the <div class="quick-answer"> block described in the output format below. Highest-impact single element for getting cited.
+- QUESTION-SHAPED H2 HEADINGS: Phrase H2 headings as the actual question a person would ask an AI assistant, not as statements. "How Much Do Tattoo Studios Pay for AI Reception?" not "Tattoo Studio Pricing." Question-phrased headings that match real prompts get extracted 3.1x more often. At least 4 of your H2s must be questions. A few statement headings are fine for flow, but the majority should be questions.
+- EVERY H2 SECTION MUST open with a DIRECT ANSWER in the FIRST SENTENCE, ideally under 40 words (40-60 max). It must directly answer the question the heading poses and make complete sense if quoted by ChatGPT with zero surrounding context. Answers under 40 words get extracted 2.7x more often than longer passages. If your first sentence is background, context, or a transition — rewrite it as the answer. Do NOT build toward the answer; lead with it, then expand.
+- FIRST 200 WORDS: Within the first 200 words (the Quick Answer block counts), you MUST explicitly mention: the product name (${companyName}), at least one price point, and the target audience. AI engines cite the first 30% of content for 55% of responses.
+- Include 2+ SPECIFIC DATA POINTS per 300 words. Verifiable, attributed stats get cited 4.2x more than unattributed claims. Use verified statistics AND pricing calculations.
+- Every FAQ answer must START with the substantive answer in the first sentence (not "Yes"/"No" alone), and stay complete on its own. FAQ Q&A pairs are exactly what answer engines extract, so each FAQ question should match a real search query.
+- CLOSING SUMMARY: End the post (after the FAQ) with a brief <div class="key-takeaways"> block: a bolded "Key takeaways:" followed by 3-4 one-line bullet points digesting the post's core facts. AI engines use an end-of-article summary as a clean digest of the whole piece.
+- For ANY comparison content, include an HTML comparison TABLE with clear column headers. AI engines extract tables directly.
 
 EXTERNAL LINKS — REQUIRED:
 - Include 2-3 outbound links to authoritative, non-competing external sources that appeared in your research findings. Use the EXACT URLs from the research — never construct URLs from memory.
@@ -417,22 +420,27 @@ Return TWO blocks:
 Write the blog post body as clean semantic HTML.
 Use: h2 (with id attributes for table of contents), h3, p, ul, li, strong, a, blockquote.
 DO NOT include an h1 tag — the template/layout adds the h1.
-DO NOT include a "Quick Answer" box or summary box at the top.
+REQUIRED: Open with a "Quick Answer" summary block right after the H1/intro, before the first H2. Format it as <div class="quick-answer"> with a bolded lead ("Quick answer:") followed by a 40-60 word direct answer to the post's core question. This is the single highest-leverage AEO element: AI engines lift this block wholesale into cited answers, and it doubles as a Google featured-snippet target. Make it genuinely useful and standalone, not a restatement of the title. It must answer the query completely on its own.
+Use class="quick-answer" for the required Quick Answer block (right after intro, before first H2). Format: <div class="quick-answer"><strong>Quick answer:</strong> [40-60 word direct answer]</div>
 Use class="stat-highlight" for important numbers (sparingly — max 3).
 Use class="cta-box" for call-to-action sections (max 2 — one mid-post, one end).
 Use class="callout" for tip/info boxes.
 Use class="table-wrap" around comparison tables.
 Use class="faq-section" with class="faq-item" for FAQs at the end.
+Use class="key-takeaways" for the closing summary (after the FAQ). Format: <div class="key-takeaways"><strong>Key takeaways:</strong><ul><li>one-line fact</li></ul></div>
 Internal links as <a href="${linkPrefix}slug-here${linkSuffix}">descriptive anchor text</a>.
 Service page links as <a href="${serviceBaseUrl}/path">anchor text</a>.
 
 STRUCTURAL REQUIREMENTS — YOUR POST WILL BE REJECTED IF THESE ARE MISSING:
-1. Every H2 opens with a 40-60 word standalone answer block (AEO).
-2. 2+ data points per 300 words — use verified stats AND your own pricing math.
-3. First 200 words: ${companyName} by name, a price point, and the target audience.
-4. 2-3 EXTERNAL LINKS from the EXTERNAL URLS in research_findings. Use <a href="URL" target="_blank">descriptive text</a>. If research provided URLs, you MUST use at least 2. This is not optional.
-5. 3+ INTERNAL LINKS from the existing posts list.
-6. FAQ section with 4-6 questions using class="faq-section" and class="faq-item".
+1. QUICK ANSWER block (<div class="quick-answer">) right after the intro, before the first H2.
+2. At least 4 H2 headings phrased as questions (matching real search queries).
+3. Every H2 opens with a direct answer in the first sentence, under 40 words ideally, that stands alone if quoted.
+4. A KEY TAKEAWAYS block (<div class="key-takeaways">) after the FAQ.
+5. 2+ data points per 300 words — use verified stats AND your own pricing math.
+6. First 200 words: ${companyName} by name, a price point, and the target audience.
+7. 2-3 EXTERNAL LINKS from the EXTERNAL URLS in research_findings. Use <a href="URL" target="_blank">descriptive text</a>. If research provided URLs, you MUST use at least 2.
+8. 3+ INTERNAL LINKS from the existing posts list.
+9. FAQ section with 4-6 questions using class="faq-section" and class="faq-item".
 </content>
 
 <self_review>

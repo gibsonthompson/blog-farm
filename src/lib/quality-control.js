@@ -112,7 +112,10 @@ Review the HTML and return a JSON object with this exact structure:
     "no_fabricated_testimonials": <true/false>,
     "no_fabricated_revenue_figures": <true/false>,
     "no_generic_ai_intro": <true/false — first 200 words must NOT be generic>,
-    "answer_first_structure": <true/false — do H2 sections lead with a direct 40-60 word answer?>,
+    "answer_first_structure": <true/false — do H2 sections lead with a direct answer (ideally under 40 words) in the first sentence?>,
+    "has_quick_answer_block": <true/false — is there a Quick Answer summary block near the top that answers the core question standalone?>,
+    "question_shaped_headings": <true/false — are at least 4 H2 headings phrased as questions matching real search queries?>,
+    "has_key_takeaways": <true/false — is there a Key Takeaways / summary block at the end?>,
     "has_statistics_throughout": <true/false>,
     "entity_clarity_in_intro": <true/false — first 200 words define what/who/cost/where?>,
     "no_hallucinated_sources": <true/false — CRITICAL: are ALL named organizations real?>,
@@ -150,11 +153,12 @@ SCORING GUIDANCE — Use these rubrics. Each category has specific criteria per 
   5-6: Keyword in title OR first 100 words (not both). Fewer than 2 internal links. No external links. Meta description missing or over 160 chars.
   Below 5: Keyword missing from title AND first 100 words. No internal links. No slug optimization.
 
-- aeo_readiness: Score based on these SPECIFIC criteria:
-  9-10: Every H2 section opens with a 40-60 word standalone answer block. FAQ answers work out of context. Product name + price in first 200 words. 2+ stats per 300 words. Comparison table present (if applicable). 2+ external links.
-  7-8: Most sections have answer blocks. FAQ answers mostly standalone. Some stats present but density could be higher. Product mentioned in intro.
-  5-6: Answer blocks inconsistent — some sections open with context instead of answers. FAQ answers require surrounding context. Low statistics density. No product/price in first 200 words.
-  Below 5: No answer block structure. FAQ answers aren't standalone. No data points. AI engines would skip this content.
+- aeo_readiness: Score based on these SPECIFIC criteria (2026 AI-citation levers):
+  9-10: Quick Answer block present near the top (a standalone 40-60 word answer to the core question). Most H2 headings phrased as questions matching real queries. Every H2 opens with a direct answer in the first sentence (ideally under 40 words). FAQ answers fully standalone. Key Takeaways summary block at the end. Product name + price in first 200 words. 2+ stats per 300 words. Comparison table if applicable.
+  7-8: Quick Answer block present. Several H2s are questions and open with answers. FAQ answers mostly standalone. Product in intro. Minor gaps (e.g. no closing summary, or a couple sections open with context).
+  5-6: No Quick Answer block, OR H2 headings are all statements (not questions), OR answer blocks inconsistent (sections open with narrative/context instead of the answer). FAQ answers need surrounding context. A post can be well-written for humans but still land here if it is not structured for extraction.
+  Below 5: No answer-first structure, no Quick Answer block, statement headings throughout, FAQ answers not standalone. AI engines would skip this content.
+  NOTE: A narrative-heavy opening that buries the answer below the fold caps the score at 6 even if the prose is excellent. Extractability is the axis being measured here, not writing quality (that is content_quality).
 
 - brand_voice: Score based on these SPECIFIC criteria:
   9-10: Product mentioned by name 3+ times naturally. Current pricing included. CTA with trial/demo info present.${business.phone ? ' Phone number included.' : ''} Reads like a knowledgeable founder/expert writing to a peer — confident, specific, opinionated. Uses "you/your" throughout. Includes real-world business scenarios. Tone matches the brand voice described in the company context.
