@@ -124,6 +124,12 @@ export function validateNextjsPost(html, metadata = {}) {
   // and market-range prices are legitimate and left alone.
   const resaleCtx = /charge|client pays|clients pay|per client|per-client|resell|resale|markup|you charge|bill your|to your client|set your own price|what to charge|retail|illustrative/;
   const competitorCtx = /echowin|smith|ruby|dialzara|goodcall|synthflow|bland|autocalls|voxtell|callin|insighto|trillet|front desk|rosie|abby|nexa|air\.?ai|alternative|competitor/;
+  // Calculation context: the number is a computed RESULT (platform cost total, margin,
+  // revenue) built from the real rates, not a stated plan price. The writer legitimately
+  // shows "$99 + ($9.99 × 20) = $298.80" as platform cost at scale. Fabricated USAGE math
+  // (invented minutes) is blocked upstream in the writer strategy, so allowing calculation
+  // outputs here is safe and stops false-flagging correct arithmetic.
+  const calcCtx = /=\s*\$|\+\s*\$|×|\bx\s*\$|\*\s*\$|platform cost|total|margin|revenue|gross|profit|adds up|comes to|works out|\bcosts?:|before usage|per client fee|\/client|\bfee[s)]/;
   const priceRe = /\$(\d{2,3})(?:\.\d{2})?(?!\d)/g;
 
   // PASS 1: Find every price value that appears in a resale/retail context ANYWHERE in
@@ -150,6 +156,7 @@ export function validateNextjsPost(html, metadata = {}) {
     const vacAttributed = win.includes('voiceai connect') || win.includes('platform fee') || win.includes('platform cost');
     if (!vacAttributed) continue;
     if (resaleCtx.test(win) || competitorCtx.test(win)) continue;
+    if (calcCtx.test(win)) continue; // computed result from real rates, not a stated plan price
     badVacPrices.add('$' + pm[1]);
   }
   if (badVacPrices.size) {
