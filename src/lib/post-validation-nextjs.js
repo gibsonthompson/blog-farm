@@ -122,8 +122,8 @@ export function validateNextjsPost(html, metadata = {}) {
   // Pricing ground truth (context-aware). Only flag a price ATTRIBUTED TO VoiceAI Connect
   // as a platform fee that is not a real tier. Resale ("charge clients $X"), competitor,
   // and market-range prices are legitimate and left alone.
-  const resaleCtx = /charge|client pays|clients pay|per client|per-client|resell|resale|markup|you charge|bill your|to your client|set your own price|what to charge/;
-  const competitorCtx = /echowin|smith|ruby|dialzara|goodcall|synthflow|bland|autocalls|voxtell|callin|insighto|trillet|front desk|rosie|abby|nexa/;
+  const resaleCtx = /charge|client pays|clients pay|per client|per-client|resell|resale|markup|you charge|bill your|to your client|set your own price|what to charge|retail|illustrative/;
+  const competitorCtx = /echowin|smith|ruby|dialzara|goodcall|synthflow|bland|autocalls|voxtell|callin|insighto|trillet|front desk|rosie|abby|nexa|alternative|competitor/;
   const priceRe = /\$(\d{2,3})(?:\.\d{2})?(?!\d)/g;
   const badVacPrices = new Set();
   let pm;
