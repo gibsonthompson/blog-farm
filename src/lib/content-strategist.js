@@ -88,80 +88,110 @@ const OPPORTUNITY_MAPS = {
     },
   },
 
+  // ───────────────────────────────────────────────────────────────────
+  // VoiceAI Connect, rebuilt Oct 2026 around what actually ranks.
+  //
+  // GSC showed the old map was pushing the two worst formats on the site:
+  //   - "sell AI receptionist to [vertical]" (salesPlaybooks): 42 posts, ~6 clicks
+  //   - "VoiceAI Connect vs [competitor]"   (competitorUpdates): 9 posts, 0 clicks
+  // Together ~40% of the blog for ~6 clicks, while diluting authority and
+  // cannibalizing the money terms. Both categories are REMOVED. The map now
+  // mirrors the clusters that earn clicks: agency economics, product usage,
+  // buyer-intent "best/compared" listicles, and the white-label platform pillar.
+  // The hard filter below (isBannedVacTopic) stops the old patterns even if the
+  // model freelances them.
+  // ───────────────────────────────────────────────────────────────────
   'voiceai-connect': {
-    agencyScaling: {
-      description: 'Scaling past common plateaus',
+    platformPillar: {
+      description: 'White-label platform / buyer-intent pillar + supporting posts (link up to /platform)',
       targets: [
-        'how to scale AI receptionist agency past 20 clients',
-        'hiring vs automation for growing AI agencies',
-        'agency operations at 50 vs 100 clients',
-        'when to upgrade from starter to professional plan',
-        'building an agency team with white label AI',
+        'what is a white label AI receptionist platform',
+        'white label AI receptionist platform for agencies',
+        'white label vs building your own AI receptionist',
+        'how to choose a white label AI receptionist platform',
+        'white label AI receptionist pricing and margins explained',
       ],
     },
-    ghlMigration: {
-      description: 'GoHighLevel alternative and migration content',
+    agencyEconomics: {
+      description: 'How agencies make money reselling AI receptionists (the cluster that actually ranks)',
       targets: [
-        'switching from GoHighLevel to white label AI receptionist',
-        'GoHighLevel AI receptionist limitations',
-        'A2P 10DLC registration problems GoHighLevel agencies',
-        'GoHighLevel vs dedicated AI receptionist platform',
-        'why agencies leave GoHighLevel for specialized platforms',
+        'how much do AI receptionist agencies make',
+        'AI receptionist agency profit margins',
+        'recurring revenue business models for agencies',
+        'how to price AI receptionist services',
+        'how to resell AI receptionist services',
+        'SMMA vs AI receptionist agency margins',
       ],
     },
-    clientRetention: {
-      description: 'Reducing churn and retaining AI receptionist clients',
+    agencyOperations: {
+      description: 'Running and scaling an AI receptionist agency',
       targets: [
-        'reduce AI receptionist client churn rate',
-        'how to show ROI to AI receptionist clients',
-        'client onboarding checklist AI receptionist agency',
-        'monthly reporting templates AI receptionist agency',
-        'how to handle client complaints about AI voice quality',
+        'how to scale an AI receptionist agency',
+        'AI receptionist client onboarding process',
+        'reducing AI receptionist client churn',
+        'showing ROI to AI receptionist clients',
+        'building an agency team for AI receptionists',
       ],
     },
-    pricingStrategy: {
-      description: 'Agency pricing and packaging',
+    productUsage: {
+      description: 'How to actually use the product (highest-click cluster: prompts, setup, capabilities)',
       targets: [
-        'how to price AI receptionist services for different industries',
-        'AI receptionist agency pricing tiers strategy',
-        'value based pricing for AI phone answering',
-        'bundling AI receptionist with other agency services',
-        'raising prices on existing AI receptionist clients',
+        'AI receptionist prompt templates',
+        'how to set up an AI receptionist',
+        'what can an AI receptionist handle',
+        'AI receptionist Google Calendar booking setup',
+        'HIPAA compliant AI receptionist guide',
+        'AI receptionist greeting and voice best practices',
       ],
     },
-    salesPlaybooks: {
-      description: 'Vertical-specific sales approaches',
+    buyerComparisons: {
+      description: 'Buyer-intent "best / compared" listicles (NOT 1:1 brand-vs-brand spam)',
       targets: [
-        'sell AI receptionist to home service contractors',
-        'sell AI receptionist to medical practices compliance',
-        'sell AI receptionist to property management companies',
-        'sell AI receptionist to insurance agencies',
-        'cold email templates for AI receptionist sales',
-        'LinkedIn outreach for AI receptionist agencies',
-        'demo script for selling AI receptionist to local businesses',
-      ],
-    },
-    marketTrends: {
-      description: 'Industry analysis and trend content',
-      targets: [
-        'AI receptionist market size and growth 2026',
-        'white label AI voice agent industry trends',
-        'future of AI phone answering for small businesses',
-        'AI receptionist vs human receptionist cost comparison 2026',
-        'how AI search engines change white label agency marketing',
-      ],
-    },
-    competitorUpdates: {
-      description: 'Platform comparison refreshes',
-      targets: [
-        'VoiceAI Connect vs Synthflow detailed comparison',
-        'VoiceAI Connect vs Retell AI for agencies',
-        'best white label AI receptionist platforms ranked update',
-        'white label AI receptionist platform pricing comparison update',
+        'best white label AI receptionist platforms',
+        'best industries for an AI receptionist',
+        'AI receptionist vs human receptionist cost',
+        'AI receptionist vs answering service',
       ],
     },
   },
 };
+
+// ───────────────────────────────────────────────────────────────────
+// VoiceAI Connect: banned topic patterns (Oct 2026 strategy change).
+// 42 "sell AI receptionist to [vertical]" posts earned ~6 clicks total; 9
+// "VoiceAI Connect vs [competitor]" posts earned 0. These patterns dilute
+// authority and cannibalize, so they are banned from NEW VAC recommendations.
+// Applied only to voiceai-connect so CallBird's own strategy is untouched.
+// ───────────────────────────────────────────────────────────────────
+const VAC_BANNED_TOPIC_PATTERNS = [
+  /\bsell(ing)?\b[^.]{0,30}\bai\s+receptionist\b[^.]{0,20}\bto\b/i, // "sell AI receptionist to [vertical]"
+  /\bvoiceai\s*connect\s+vs\b/i,                                    // "VoiceAI Connect vs [competitor]"
+  /\b(starter|professional|enterprise)\s+(plan|tier)\b/i,           // fabricated plan names (real plans: Free, Pro, Scale)
+];
+
+function isBannedVacTopic(str) {
+  const s = String(str || '');
+  return VAC_BANNED_TOPIC_PATTERNS.some(re => re.test(s));
+}
+
+// Prompt text that tells the strategist what NOT to produce for VAC and where to
+// aim instead. Empty for every other business.
+function vacStrategyNote(businessSlug) {
+  if (businessSlug !== 'voiceai-connect') return '';
+  return `
+
+=== HARD EXCLUSIONS FOR THIS SITE (do NOT recommend) ===
+We are oversaturated on these and they earn near-zero clicks, so they are banned:
+- "Sell AI Receptionist to [vertical]" posts (plumbers, dentists, HVAC, etc.)
+- 1:1 "VoiceAI Connect vs [single competitor]" comparisons
+- Any "Starter", "Professional", or "Enterprise" plan references (our plans are Free, Pro, Scale)
+
+Aim instead at the clusters that actually rank for us:
+- Agency economics: margins, pricing, reselling, recurring revenue
+- Product usage / how-to: prompt templates, setup, what it can handle, calendar booking, HIPAA
+- Buyer-intent "best / compared" listicles (best white-label platforms, AI vs human/answering service)
+- Content that supports and links up to the white-label platform pillar (/platform)`;
+}
 
 /**
  * Analyze existing coverage against opportunity map.
@@ -169,7 +199,7 @@ const OPPORTUNITY_MAPS = {
  */
 function analyzeGaps(existingPosts, businessSlug) {
   const map = OPPORTUNITY_MAPS[businessSlug];
-  if (!map) return null; // No map for this business — use AI-only strategy
+  if (!map) return null; // No map for this business - use AI-only strategy
 
   const existingSlugs = existingPosts.map(p => p.slug.toLowerCase());
   const existingKeywords = existingPosts.map(p => (p.primary_keyword || '').toLowerCase());
@@ -249,7 +279,7 @@ export async function recommendNextPosts(businessSlug, count = 5) {
   const gaps = analyzeGaps(existingPosts, businessSlug);
 
   const existingList = existingPosts
-    .map(p => `• "${p.title}" [${p.category || 'unknown'}] — keyword: ${p.primary_keyword || 'N/A'}`)
+    .map(p => `• "${p.title}" [${p.category || 'unknown'}] - keyword: ${p.primary_keyword || 'N/A'}`)
     .join('\n');
 
   // Build gap summary if we have a map
@@ -292,21 +322,22 @@ ${brandKit.competitor_names.join(', ')}
 ${existingList}
 
 ${gapSummary}
+${vacStrategyNote(businessSlug)}
 
 === YOUR TASK ===
 FIRST: Search for trending topics and recent developments in this space to identify timely content opportunities.
 
 Then recommend exactly ${count} blog posts to create next, in priority order. Consider:
 
-1. **Coverage gaps** — What important topics are completely missing?
-2. **Business impact** — Which posts would drive the most leads/conversions?
-3. **Keyword opportunity** — Target keywords with commercial intent
-4. **Topical authority** — Fill in clusters to strengthen domain authority
-5. **Seasonal relevance** — Is anything timely right now (${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })})?
-6. **AEO optimization** — Which posts would help ${business.name} get cited by AI engines (ChatGPT, Perplexity)?
-7. **Anti-cannibalization** — Do NOT recommend topics that overlap with existing posts
-8. **Competitor vulnerability** — Where can we outrank thin or outdated competitor content?
-9. **Fresh research** — Use web search to validate that recommended keywords have actual search demand
+1. **Coverage gaps** - What important topics are completely missing?
+2. **Business impact** - Which posts would drive the most leads/conversions?
+3. **Keyword opportunity** - Target keywords with commercial intent
+4. **Topical authority** - Fill in clusters to strengthen domain authority
+5. **Seasonal relevance** - Is anything timely right now (${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })})?
+6. **AEO optimization** - Which posts would help ${business.name} get cited by AI engines (ChatGPT, Perplexity)?
+7. **Anti-cannibalization** - Do NOT recommend topics that overlap with existing posts
+8. **Competitor vulnerability** - Where can we outrank thin or outdated competitor content?
+9. **Fresh research** - Use web search to validate that recommended keywords have actual search demand
 
 For each recommendation, provide:
 - A specific title
@@ -335,8 +366,8 @@ No markdown fences. No explanation outside the JSON. Just the array.`
   let recommendations;
   try {
     const textBlocks = response.content.filter(b => b.type === 'text');
-    
-    // Try each text block from last to first — JSON array is usually in the final block
+
+    // Try each text block from last to first - JSON array is usually in the final block
     let parsed = null;
     for (let i = textBlocks.length - 1; i >= 0; i--) {
       const blockText = textBlocks[i].text.trim().replace(/```json\n?|```/g, '').trim();
@@ -363,6 +394,13 @@ No markdown fences. No explanation outside the JSON. Just the array.`
     recommendations = parsed;
   } catch (e) {
     throw new Error(`Strategist response was not valid JSON: ${e.message}`);
+  }
+
+  // Hard filter: drop banned VAC formats even if the model freelanced one.
+  if (businessSlug === 'voiceai-connect') {
+    recommendations = recommendations.filter(
+      r => !isBannedVacTopic(`${r.title || ''} ${r.target_keyword || ''} ${r.notes || ''}`)
+    );
   }
 
   return {
@@ -502,6 +540,7 @@ ${queuedList}
 
 ${gapSummary}
 ${performanceNote}
+${vacStrategyNote(businessSlug)}
 
 === YOUR TASK ===
 First, use web search to sanity-check real search demand and see what is currently ranking for the most promising angles.
@@ -526,7 +565,7 @@ For each post return:
 - target_keyword
 - post_type (one of: industry, comparison, how-to, cost-analysis, statistics, guide, about, cost-reduction, revenue-growth, brand-marketing, industry-analysis)
 - intent (informational | commercial | transactional | pillar)
-- template_signature (the structural stem, e.g. "sell ai receptionist to" — used to verify anti-repetition)
+- template_signature (the structural stem, e.g. "sell ai receptionist to" - used to verify anti-repetition)
 - cluster (a short label grouping pillar+spokes, or "standalone")
 - reasoning (1 sentence)
 - business_impact (high | medium | low)
@@ -558,6 +597,14 @@ Return ONLY a valid JSON array, no fences, no prose:
     if (m) { try { plan = JSON.parse(m[0]); } catch { /* noop */ } }
   }
   if (!plan) throw new Error('Planner did not return valid JSON');
+
+  // Hard filter for VAC: drop banned formats (sell-to / vs / fabricated plans)
+  // before anti-repetition so they can never reach the queue.
+  if (businessSlug === 'voiceai-connect') {
+    plan = plan.filter(
+      item => !isBannedVacTopic(`${item.title || ''} ${item.target_keyword || ''} ${item.template_signature || ''} ${item.notes || ''}`)
+    );
+  }
 
   // ── Enforce anti-repetition deterministically (belt and suspenders) ──
   // Even with the prompt rule, hard-cap templates in code so a bad batch
